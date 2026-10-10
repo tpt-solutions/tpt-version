@@ -1,0 +1,165 @@
+Design Spec: tpt-version (Layer 3)
+1. Mission & Scope
+Mission: To provide a unified, pure-Rust, content-addressable version control engine for structured data. It implements Merkle DAGs, branching, merging, and diffing for tpt-model entities, enabling Git-like workflows for 3D CAD models (tpt-vertex), complex documents (tpt-doc), and collaborative spreadsheets (tpt-lattice).
+Scope:
+In Scope: Content-addressable storage (CAS), Merkle DAG construction, object hashing, branching, merging (3-way merge for structured data), diffing (structural diff, not text diff), commit history traversal, and repository management.
+Out of Scope: Network transport (handled by tpt-replicate), conflict resolution UI (handled by the application layer), and working directory management (handled by the application layer).
+2. Core Constraints & Architecture
+Zero C-FFI: 100% Pure Rust. No linking to libgit2 or JGit.
+no_std + alloc: The core DAG and hashing logic must run in no_std environments (WASM, embedded).
+Content-Addressable: Every object (entity, commit, tree) is identified by a cryptographic hash of its content. Identical content always produces the same hash, enabling deduplication.
+Structured Data Aware: Unlike Git (which diffs text lines), tpt-version diffs tpt-model entities. It understands that a CAD vertex moved from (0,0,0) to (1,1,1) is a modification, not a deletion and addition.
+The Dependency Map
+Serialization: tpt-uir (Entities are serialized to IR nodes before hashing and storage).
+Identity: tpt-primitives (Entities have stable UUIDs; commits have author/capability tokens).
+Crypto: tpt-crypto (SHA-256 or BLAKE3 for content hashing, Ed25519 for commit signing).
+Model: tpt-model (Provides the schema and entity definitions that are versioned).
+3. Core Modules & API Design
+Module A: tpt_version::object (The Object Model)
+The fundamental data structures stored in the CAS.
+Blob: Raw binary data (e.g., an image, a mesh file). Identified by content hash.
+Entity: A tpt-model entity (e.g., a CAD part, a spreadsheet cell). Serialized as a tpt-uir node. Identified by content hash.
+Tree: A directory-like structure mapping entity IDs to their content hashes. Represents a snapshot of a collection of entities at a point in time.
+Commit: A pointer to a Tree, plus metadata (parent commits, author, timestamp, message, signature). Forms the Merkle DAG.
+Key Struct:
+pub struct Commit {
+    pub tree_hash: ContentHash,
+    pub parents: Vec<ContentHash>,
+    pub author: ActorId,
+    pub timestamp: u64,
+    pub message: String,
+    pub signature: Option<Signature>,
+}
+
+pub struct Tree {
+    pub entries: BTreeMap<EntityId, ContentHash>,
+}
+Module B: tpt_version::store (Content-Addressable Storage)
+The storage backend for objects.
+CasStore Trait: Abstract interface for storing and retrieving objects by hash.
+pub trait CasStore {
+    fn put(&mut self, hash: ContentHash, data: &[u8]) -> Result<(), StoreError>;
+    fn get(&self, hash: &ContentHash) -> Result<Vec<u8>, StoreError>;
+    fn contains(&self, hash: &ContentHash) -> bool;
+}
+Built-in Implementations:
+MemoryStore: In-memory HashMap (for testing and ephemeral repos).
+FileSystemStore: On-disk storage (objects stored as files in a .tpt/objects/ directory, sharded by hash prefix).
+S3Store: Cloud storage (for distributed collaboration).
+Module C: tpt_version::dag (The Merkle DAG)
+The graph structure of commits.
+DAG Traversal: Walk the commit history (ancestors, descendants, branches).
+Branch Management: Named pointers to commits (e.g., main, feature-x). Stored as refs in the store.
+Merge Base: Find the common ancestor of two commits (critical for 3-way merge).
+Key Function:
+pub fn find_merge_base(
+    store: &dyn CasStore,
+    commit_a: ContentHash,
+    commit_b: ContentHash,
+) -> Option<ContentHash>;
+Module D: tpt_version::diff (Structured Diffing)
+The engine that compares two trees and produces a list of changes.
+Tree Diff: Compares two Tree objects and returns a list of DiffEntry (Added, Removed, Modified).
+Entity Diff: For modified entities, compares the old and new tpt-uir nodes and produces a structured diff (field-level changes).
+Key Struct:
+pub enum DiffEntry {
+    Added { id: EntityId, hash: ContentHash },
+    Removed { id: EntityId, hash: ContentHash },
+    Modified { id: EntityId, old_hash: ContentHash, new_hash: ContentHash, diff: EntityDiff },
+}
+
+pub struct EntityDiff {
+    pub field_changes: Vec<FieldChange>,
+}
+
+pub struct FieldChange {
+    pub field_path: Vec<String>, // e.g., ["position", "x"]
+    pub old_value: UirNode,
+    pub new_value: UirNode,
+}
+Module E: tpt_version::merge (3-Way Merge)
+The engine that combines two divergent branches.
+3-Way Merge: Takes a base commit, and two divergent commits (ours and theirs). Produces a merged tree.
+Merge Strategy:
+Diff base -> ours (changes A).
+Diff base -> theirs (changes B).
+For each entity:
+If only A changed it, apply A's change.
+If only B changed it, apply B's change.
+If both changed it, attempt to merge field-by-field. If fields don't overlap, auto-merge. If fields overlap, mark as conflict.
+Conflict Representation: Conflicts are represented as a special ConflictMarker in the merged tree, which the application layer can resolve.
+Key Function:
+pub fn merge_trees(
+    store: &dyn CasStore,
+    base: ContentHash,
+    ours: ContentHash,
+    theirs: ContentHash,
+) -> Result<MergeResult, MergeError>;
+
+pub struct MergeResult {
+    pub merged_tree: ContentHash,
+    pub conflicts: Vec<Conflict>,
+}
+Module F: tpt_version::repo (The Repository)
+The high-level API for managing a versioned collection of entities.
+Repository: Wraps a CasStore and provides ergonomic APIs for common operations (commit, branch, merge, checkout).
+Working Copy: The application maintains a "working copy" (the current state of entities in memory). The repo provides methods to snapshot the working copy into a commit.
+Key API:
+impl Repository {
+    pub fn commit(&mut self, message: &str, author: &ActorId) -> Result<ContentHash, RepoError>;
+    pub fn branch(&mut self, name: &str, commit: ContentHash) -> Result<(), RepoError>;
+    pub fn checkout(&mut self, commit: ContentHash) -> Result<(), RepoError>;
+    pub fn merge(&mut self, branch: &str) -> Result<MergeResult, RepoError>;
+    pub fn log(&self, branch: &str) -> Vec<Commit>;
+}
+4. The Processing Pipeline
+How a user creates a commit in tpt-vertex:
+Working Copy: The user has been editing a CAD model. The current state is a collection of tpt-model entities in memory.
+Snapshot: The user clicks "Commit". The app calls repo.commit("Moved vertex", &actor).
+Serialization: Each entity is serialized to a tpt-uir node.
+Hashing: Each serialized entity is hashed (SHA-256) to produce a ContentHash.
+Tree Construction: A Tree object is created, mapping each EntityId to its ContentHash.
+Tree Storage: The tree is serialized and stored in the CAS.
+Commit Construction: A Commit object is created, pointing to the tree, with parent commits, author, timestamp, and message.
+Commit Storage: The commit is serialized, signed (via tpt-crypto), and stored in the CAS.
+Branch Update: The current branch ref (e.g., main) is updated to point to the new commit.
+Success: The commit is complete. The user can now branch, merge, or push to a remote.
+5. Integration with the TPT Ecosystem
+tpt-vertex (CAD): The primary consumer. Uses tpt-version to provide Git-like version control for 3D CAD models. Users can branch a design, experiment, and merge back. The structured diff shows exactly which vertices/edges/faces changed.
+tpt-doc (Documents): Uses tpt-version to track document history. Users can branch a document, make edits, and merge. The diff shows which paragraphs were added/removed/modified.
+tpt-lattice (Spreadsheets): Uses tpt-version to track spreadsheet history. Users can branch a spreadsheet, experiment with formulas, and merge. The diff shows which cells changed.
+tpt-model: tpt-version relies on tpt-model to serialize entities to tpt-uir nodes. The structured diff understands the entity schema.
+tpt-uir: All objects are serialized using tpt-uir before hashing and storage.
+tpt-crypto: Commits are signed using Ed25519 to provide non-repudiation.
+tpt-replicate: tpt-version provides the local repo; tpt-replicate syncs it across the network.
+6. Testing & Quality Strategy
+Deterministic Hashing: Using tpt-testkit::golden, we serialize the same entity on Linux, macOS, and Windows, and assert that the content hash is identical.
+Merge Correctness: Using tpt-testkit::property, we generate random commit histories, branch at random points, make random changes, and merge. We assert that the merge result is correct (no data loss, conflicts detected correctly).
+Diff Accuracy: We create two trees with known differences, run the diff, and assert that the diff entries match the expected changes.
+Performance Benchmarks: Using tpt-testkit::bench, we measure the time to commit a large tree (10,000 entities), diff two large trees, and merge two divergent branches.
+7. Roadmap & Milestones
+Phase 1: Objects & CAS (Weeks 1-3)
+Implement Blob, Entity, Tree, and Commit structs.
+Implement MemoryStore and FileSystemStore.
+Implement content hashing (SHA-256).
+Milestone: Can store and retrieve objects by hash.
+Phase 2: DAG & Branching (Weeks 4-6)
+Implement DAG traversal (ancestors, descendants).
+Implement branch management (create, list, delete).
+Implement commit creation and history.
+Milestone: Can create a linear commit history and branch.
+Phase 3: Diffing (Weeks 7-9)
+Implement tree diff (compare two trees).
+Implement entity diff (compare two entities field-by-field).
+Milestone: Can show what changed between two commits.
+Phase 4: Merging (Weeks 10-12)
+Implement merge-base finding.
+Implement 3-way merge with conflict detection.
+Milestone: Can merge two divergent branches.
+Phase 5: Integration & Signing (Weeks 13-14)
+Integrate tpt-crypto for commit signing.
+Integrate with tpt-vertex for CAD versioning.
+Publish v1.0.0.
+Architect's Note
+The most dangerous trap in structured version control is merge conflicts. Unlike text, where you can show the user two conflicting lines, structured data conflicts can be complex (e.g., two users moved the same vertex to different locations).
+To handle this, tpt-version uses a field-level merge strategy. If two users modify different fields of the same entity, it auto-merges. If they modify the same field, it marks it as a conflict and provides the old value, our value, and their value. The application layer (tpt-vertex) then shows a UI to resolve the conflict.
