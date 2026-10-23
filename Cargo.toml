@@ -12,14 +12,17 @@ categories = ["data-structures", "no-std", "development-tools"]
 publish = false
 
 [features]
-default = ["std"]
+default = ["std", "derive"]
 std = ["tpt-crypto-hash/std", "tpt-crypto-sig/std"]
+# #[derive(Entity)]. Needs no std, but pulls in the proc-macro crate at build time.
+derive = ["dep:tpt-version-derive"]
 # S3-backed object store. Needs std, and the caller supplies the network client.
 s3 = ["std"]
 
 [dependencies]
 tpt-crypto-hash = { git = "https://github.com/tpt-solutions/tpt-crypto", default-features = false, features = ["alloc"] }
 tpt-crypto-sig = { git = "https://github.com/tpt-solutions/tpt-crypto", default-features = false, features = ["alloc"] }
+tpt-version-derive = { path = "derive", optional = true }
 
 [[example]]
 name = "cad_branch_merge"
@@ -54,3 +57,7 @@ required-features = ["std"]
 # Dev-only. Pinned to a revision, since the crate is not on crates.io.
 tpt-testkit = { git = "https://github.com/tpt-solutions/tpt-testkit", rev = "e77a90198eed4235224a49e3226fe2c1b9f2247b", default-features = false, features = ["golden", "property"] }
 proptest = "1"
+
+[workspace]
+members = ["derive"]
+

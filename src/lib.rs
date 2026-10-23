@@ -25,11 +25,16 @@ pub mod trust;
 pub mod uir;
 
 pub use diff::{DiffEntry, EntityDiff, FieldChange};
-pub use entity::Entity;
+pub use entity::{Entity, UirValue};
+
 pub use error::{MergeError, ObjectError, RepoError, StoreError};
 pub use merge::{MergeResult, Resolution};
 pub use object::{ActorId, Commit, Conflict, ContentHash, EntityId, FieldConflict, Object, Tree};
 pub use repo::{Clock, LogicalClock, Repository};
 pub use sign::{Ed25519Signer, Signature, Signer};
 pub use store::{CasStore, MemoryStore, RefStore};
+/// The `#[derive(Entity)]` macro. It shares a name with the trait, which lives
+/// in a different namespace.
+#[cfg(feature = "derive")]
+pub use tpt_version_derive::Entity;
 pub use uir::{Scalar, UirNode};

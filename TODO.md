@@ -106,7 +106,7 @@ Plan: see the review notes. Tier 1 and Tier 2 come first.
 
 ### Tier 2: adoption
 - [x] Examples: `spreadsheet_cells`, `document_blocks`, `file_store_cli`, `signed_history`, `s3_sync`; each is linked from the README (`cargo run --example <name>`; `s3_sync` needs `--features s3`).
-- [ ] `#[derive(Entity)]` (derive crate or `macro_rules!`) to remove hand-written `to_uir` / `from_uir`.
+- [x] `#[derive(Entity)]` (derive crate or `macro_rules!`) to remove hand-written `to_uir` / `from_uir`. It is a proc-macro in `derive/`, behind the default `derive` feature. Each field type implements `UirValue`, which covers scalars, `EntityId`, `Option`, `Vec` and fixed arrays.
 - [x] `prelude` module; the README is the crate docs, so its Quick Start is a doctest.
 - [~] App template (entity + repo + merge-UI callback): not started. The "porting your data model" guide is done (`docs/porting.md`).
 - [x] `docs/` guide: `docs/concepts.md` (includes store selection and no_std/WASM), `docs/conflicts.md`, `docs/porting.md` and `docs/faq.md` (versus Git and CRDTs).

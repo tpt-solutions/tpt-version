@@ -4,7 +4,8 @@
 //! use tpt_version::prelude::*;
 //! ```
 
-pub use crate::entity::Entity;
+pub use crate::Entity;
+pub use crate::entity::UirValue;
 pub use crate::error::{ObjectError, RepoError, StoreError};
 pub use crate::merge::Resolution;
 pub use crate::object::{ActorId, ContentHash, EntityId};
