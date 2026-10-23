@@ -61,3 +61,8 @@ proptest = "1"
 [workspace]
 members = ["derive"]
 
+
+[[bin]]
+name = "tpt"
+path = "src/bin/tpt.rs"
+required-features = ["std"]

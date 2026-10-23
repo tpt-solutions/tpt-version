@@ -139,3 +139,21 @@ existing hashes must be deliberate. Dependencies are git dependencies on
 
 Licensed under either of [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at
 your option.
+
+## Command-line tool
+
+`tpt` versions a key-value document kept in a directory. Each command is one
+step, and the current branch is remembered in the store.
+
+```sh
+cargo run --bin tpt -- commit "first draft" title=Spec owner=ana
+cargo run --bin tpt -- branch review
+cargo run --bin tpt -- switch review
+cargo run --bin tpt -- commit "tighten title" title="Spec v2"
+cargo run --bin tpt -- switch main
+cargo run --bin tpt -- merge review theirs "take review's title"
+cargo run --bin tpt -- log
+```
+
+Run `tpt` with no arguments for the full command list. The store defaults to
+`.tpt`, and `--dir` picks another.
