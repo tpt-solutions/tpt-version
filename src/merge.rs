@@ -12,7 +12,7 @@ use alloc::vec::Vec;
 use crate::error::RepoError;
 use crate::object::{Conflict, ContentHash, EntityId, FieldConflict, Object, Tree};
 use crate::store::{CasStore, load_entity, load_tree, store_object};
-use crate::uir::UirNode;
+use crate::uir::{Scalar, UirNode};
 
 /// The outcome of a merge. `merged_tree` may reference conflict objects, which
 /// are also listed in `conflicts`.
@@ -35,6 +35,91 @@ pub enum Resolution {
     Custom(UirNode),
 }
 
+/// How a numeric field whose two sides both changed is combined. Without a
+/// strategy, such a field is a conflict.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FieldStrategy {
+    /// Keeps both sides' changes: `base + (ours - base) + (theirs - base)`. A
+    /// missing base counts as zero.
+    Sum,
+    /// The larger of the two sides.
+    Max,
+    /// The smaller of the two sides.
+    Min,
+}
+
+/// Per-field merge strategies, keyed by field path. Only numeric fields can
+/// have one, and only when both sides changed them to different values.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MergePolicy {
+    strategies: BTreeMap<Vec<String>, FieldStrategy>,
+}
+
+impl MergePolicy {
+    /// A policy with no strategies, so every overlapping field is a conflict.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Gives the field at `path` a strategy.
+    pub fn field(mut self, path: &[&str], strategy: FieldStrategy) -> Self {
+        let path = path.iter().map(|part| String::from(*part)).collect();
+        self.strategies.insert(path, strategy);
+        self
+    }
+
+    fn strategy_at(&self, path: &[String]) -> Option<FieldStrategy> {
+        self.strategies.get(path).copied()
+    }
+}
+
+/// Combines two changes to one numeric field. Returns `None` when the values are
+/// not numbers of the same kind, or when a sum would overflow, so the caller
+/// records a conflict.
+fn combine(
+    strategy: FieldStrategy,
+    base: Option<&UirNode>,
+    ours: &UirNode,
+    theirs: &UirNode,
+) -> Option<UirNode> {
+    match (ours, theirs) {
+        (UirNode::Scalar(Scalar::Int(ours)), UirNode::Scalar(Scalar::Int(theirs))) => {
+            let (ours, theirs) = (*ours, *theirs);
+            let base = match base {
+                None => 0,
+                Some(UirNode::Scalar(Scalar::Int(base))) => *base,
+                Some(_) => return None,
+            };
+            let merged = match strategy {
+                FieldStrategy::Sum => base
+                    .checked_add(ours.checked_sub(base)?)?
+                    .checked_add(theirs.checked_sub(base)?)?,
+                FieldStrategy::Max => ours.max(theirs),
+                FieldStrategy::Min => ours.min(theirs),
+            };
+            Some(UirNode::from(merged))
+        }
+        (UirNode::Scalar(Scalar::Float(ours)), UirNode::Scalar(Scalar::Float(theirs))) => {
+            let (ours, theirs) = (*ours, *theirs);
+            let base = match base {
+                None => 0.0,
+                Some(UirNode::Scalar(Scalar::Float(base))) => *base,
+                Some(_) => return None,
+            };
+            if ours.is_nan() || theirs.is_nan() || base.is_nan() {
+                return None;
+            }
+            let merged = match strategy {
+                FieldStrategy::Sum => base + (ours - base) + (theirs - base),
+                FieldStrategy::Max => ours.max(theirs),
+                FieldStrategy::Min => ours.min(theirs),
+            };
+            Some(UirNode::from(merged))
+        }
+        _ => None,
+    }
+}
+
 /// Merges `ours` and `theirs` against `base`, given as tree hashes.
 ///
 /// Per entity: a change on one side only takes that side. Identical changes
@@ -45,6 +130,18 @@ pub fn merge_trees<S: CasStore>(
     base: ContentHash,
     ours: ContentHash,
     theirs: ContentHash,
+) -> Result<MergeResult, RepoError> {
+    merge_trees_with(store, base, ours, theirs, &MergePolicy::default())
+}
+
+/// [`merge_trees`] with per-field strategies applied to overlapping numeric
+/// fields.
+pub fn merge_trees_with<S: CasStore>(
+    store: &mut S,
+    base: ContentHash,
+    ours: ContentHash,
+    theirs: ContentHash,
+    policy: &MergePolicy,
 ) -> Result<MergeResult, RepoError> {
     let base = load_tree(store, &base)?;
     let ours = load_tree(store, &ours)?;
@@ -71,7 +168,15 @@ pub fn merge_trees<S: CasStore>(
         } else if base_hash == theirs_hash {
             ours_hash
         } else {
-            merge_entity(store, id, base_hash, ours_hash, theirs_hash, &mut conflicts)?
+            merge_entity(
+                store,
+                id,
+                base_hash,
+                ours_hash,
+                theirs_hash,
+                &mut conflicts,
+                policy,
+            )?
         };
         if let Some(hash) = outcome {
             merged.entries.insert(id, hash);
@@ -92,6 +197,7 @@ fn merge_entity<S: CasStore>(
     ours: Option<ContentHash>,
     theirs: Option<ContentHash>,
     conflicts: &mut Vec<Conflict>,
+    policy: &MergePolicy,
 ) -> Result<Option<ContentHash>, RepoError> {
     let (Some(our_hash), Some(their_hash)) = (ours, theirs) else {
         // One side deleted the entity while the other changed it.
@@ -115,6 +221,7 @@ fn merge_entity<S: CasStore>(
         Some(&our_node),
         Some(&their_node),
         &mut fields,
+        policy,
     );
     match merged {
         Some(node) if fields.is_empty() => Ok(Some(store_object(store, &Object::Entity(node))?)),
@@ -135,6 +242,7 @@ fn merge_node(
     ours: Option<&UirNode>,
     theirs: Option<&UirNode>,
     fields: &mut Vec<FieldConflict>,
+    policy: &MergePolicy,
 ) -> Option<UirNode> {
     if ours == theirs {
         return ours.cloned();
@@ -144,6 +252,12 @@ fn merge_node(
     }
     if base == theirs {
         return ours.cloned();
+    }
+    if let (Some(strategy), Some(our_value), Some(their_value)) =
+        (policy.strategy_at(path.as_slice()), ours, theirs)
+        && let Some(combined) = combine(strategy, base, our_value, their_value)
+    {
+        return Some(combined);
     }
     if let (Some(UirNode::Map(our_map)), Some(UirNode::Map(their_map))) = (ours, theirs) {
         let empty = BTreeMap::new();
@@ -165,6 +279,7 @@ fn merge_node(
                 our_map.get(key),
                 their_map.get(key),
                 fields,
+                policy,
             );
             path.pop();
             if let Some(value) = child {

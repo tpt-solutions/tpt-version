@@ -125,7 +125,7 @@ Plan: see the review notes. Tier 1 and Tier 2 come first.
 
 ### Tier 4: innovative
 - [ ] Sequence-aware list merge with per-field list policy (`Atomic`, `Set`, `Ordered`).
-- [ ] Per-field merge strategies (counter sum, max, last-writer-wins, text three-way) declared on `Entity`.
+- [~] Per-field merge strategies. `MergePolicy` on the repository (`with_merge_policy`) gives numeric fields a `FieldStrategy`: `Sum`, `Max` or `Min`. Last-writer-wins and text three-way merge are not done, and the strategies are not yet declared on `Entity`.
 - [ ] Post-merge semantic validators (constraints, formula references).
 - [~] Time-travel queries (`entity_at`) are done. `as_of` (a query by time) and diff-of-diffs for merge review are not.
 - [ ] Signed review / approval objects stored in the CAS.

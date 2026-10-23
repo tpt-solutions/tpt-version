@@ -14,7 +14,7 @@ use crate::entity::Entity;
 use crate::error::RepoError;
 use crate::history::{self, EntityVersion, FieldBlame};
 use crate::maintenance::{self, GcReport};
-use crate::merge::{self, MergeResult, Resolution};
+use crate::merge::{self, MergePolicy, MergeResult, Resolution};
 use crate::object::{ActorId, Commit, Conflict, ContentHash, EntityId, Object, Tree};
 use crate::sign::{Signature, Signer};
 use crate::store::{CasStore, PruneStore, RefStore, load_entity, load_tree, store_object};
@@ -159,6 +159,7 @@ pub struct Repository<S, C> {
     conflicts: Vec<Conflict>,
     hooks: Option<Box<dyn Hooks>>,
     trust: Option<TrustPolicy>,
+    merge_policy: MergePolicy,
 }
 
 impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
@@ -188,6 +189,7 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
             conflicts: Vec::new(),
             hooks: None,
             trust: None,
+            merge_policy: MergePolicy::new(),
         })
     }
 
@@ -200,6 +202,13 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
     /// Installs hooks that run around every commit and merge from now on.
     pub fn with_hooks(mut self, hooks: Box<dyn Hooks>) -> Self {
         self.hooks = Some(hooks);
+        self
+    }
+
+    /// Sets how overlapping numeric fields are combined during merges, instead
+    /// of recording a conflict. Applies to merges and to revert and cherry-pick.
+    pub fn with_merge_policy(mut self, policy: MergePolicy) -> Self {
+        self.merge_policy = policy;
         self
     }
 
@@ -563,7 +572,8 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
             Some(head) => dag::commit_tree(&self.store, &head)?,
             None => store_object(&mut self.store, &Object::Tree(Tree::default()))?,
         };
-        let result = merge::merge_trees(&mut self.store, base, ours, theirs)?;
+        let result =
+            merge::merge_trees_with(&mut self.store, base, ours, theirs, &self.merge_policy)?;
         self.staged = load_tree(&self.store, &result.merged_tree)?.entries;
         self.conflicts = result.conflicts.clone();
         Ok(result)
@@ -650,7 +660,13 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
             Some(base) => dag::commit_tree(&self.store, &base)?,
             None => store_object(&mut self.store, &Object::Tree(Tree::default()))?,
         };
-        let result = merge::merge_trees(&mut self.store, base_tree, ours_tree, theirs_tree)?;
+        let result = merge::merge_trees_with(
+            &mut self.store,
+            base_tree,
+            ours_tree,
+            theirs_tree,
+            &self.merge_policy,
+        )?;
         self.staged = load_tree(&self.store, &result.merged_tree)?.entries;
         self.merge_parents = vec![theirs];
         self.conflicts = result.conflicts.clone();
