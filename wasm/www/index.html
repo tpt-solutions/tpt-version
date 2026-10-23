@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tpt-version demo</title>
+<style>
+  :root { color-scheme: light dark; --gap: 16px; --line: #8884; }
+  body { font-family: system-ui, sans-serif; margin: 0 auto; max-width: 56rem; padding: var(--gap); }
+  h1 { font-size: 1.4rem; }
+  section { border: 1px solid var(--line); border-radius: 8px; padding: var(--gap); margin-bottom: var(--gap); }
+  form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 8px; }
+  input { padding: 6px 8px; min-width: 0; flex: 1 1 8rem; }
+  button { padding: 6px 12px; }
+  pre { white-space: pre-wrap; margin: 0; font-family: ui-monospace, monospace; font-size: 0.9rem; }
+  .muted { opacity: 0.7; font-size: 0.9rem; }
+  #status { min-height: 1.2em; }
+  #status.error { color: #c33; }
+</style>
+</head>
+<body>
+<h1>tpt-version in the browser</h1>
+<p class="muted">Edits stay in this page. Reload and the document starts empty.</p>
+
+<section>
+  <h2>Document</h2>
+  <form id="set">
+    <input name="key" placeholder="key" required>
+    <input name="value" placeholder="value" required>
+    <button>Stage</button>
+  </form>
+  <form id="commit">
+    <input name="message" placeholder="commit message" required>
+    <button>Commit</button>
+  </form>
+  <pre id="list"></pre>
+</section>
+
+<section>
+  <h2>Branches</h2>
+  <form id="branch">
+    <input name="name" placeholder="new branch name" required>
+    <button>Branch at head</button>
+  </form>
+  <form id="switch">
+    <input name="name" placeholder="branch to check out" required>
+    <button>Switch</button>
+  </form>
+  <form id="merge">
+    <input name="source" placeholder="branch to merge in" required>
+    <input name="message" placeholder="merge message" required>
+    <label><input type="checkbox" name="prefer_source"> conflicts take the incoming branch</label>
+    <button>Merge</button>
+  </form>
+  <pre id="branches"></pre>
+</section>
+
+<section>
+  <h2>History</h2>
+  <pre id="log"></pre>
+</section>
+
+<p id="status" role="status"></p>
+
+<script type="module">
+  // The page expects the wasm-bindgen output in ./pkg, built as described in
+  // wasm/README.md.
+  import init, { Doc } from "./pkg/tpt_version_wasm.js";
+
+  const status = document.getElementById("status");
+  const show = (id, text) => (document.getElementById(id).textContent = text);
+
+  await init();
+  let doc = new Doc();
+
+  function refresh() {
+    show("list", doc.list());
+    show("branches", doc.branches());
+    show("log", doc.log());
+  }
+
+  function run(action, success) {
+    try {
+      const result = action();
+      status.className = "";
+      status.textContent = success(result);
+    } catch (error) {
+      status.className = "error";
+      status.textContent = String(error);
+    }
+    refresh();
+  }
+
+  const field = (form, name) => new FormData(form).get(name);
+  const form = (id) => document.getElementById(id);
+
+  form("set").addEventListener("submit", (event) => {
+    event.preventDefault();
+    run(() => doc.set(field(event.target, "key"), field(event.target, "value")), () => "staged");
+    event.target.reset();
+  });
+  form("commit").addEventListener("submit", (event) => {
+    event.preventDefault();
+    run(() => doc.commit(field(event.target, "message")), (hash) => `committed ${hash.slice(0, 12)}`);
+    event.target.reset();
+  });
+  form("branch").addEventListener("submit", (event) => {
+    event.preventDefault();
+    run(() => doc.branch(field(event.target, "name")), () => "branch created");
+    event.target.reset();
+  });
+  form("switch").addEventListener("submit", (event) => {
+    event.preventDefault();
+    run(() => doc.switch(field(event.target, "name")), () => "checked out");
+    event.target.reset();
+  });
+  form("merge").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const preferSource = event.target.elements.prefer_source.checked;
+    run(
+      () => doc.merge(field(event.target, "source"), field(event.target, "message"), preferSource),
+      (hash) => `merged ${hash.slice(0, 12)}`,
+    );
+    event.target.reset();
+  });
+
+  refresh();
+</script>
+</body>
+</html>

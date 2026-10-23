@@ -110,7 +110,7 @@ Plan: see the review notes. Tier 1 and Tier 2 come first.
 - [x] `prelude` module; the README is the crate docs, so its Quick Start is a doctest.
 - [x] App template (entity + repo + merge-UI callback). `examples/app_template.rs` has a derived entity, a `Workspace` that owns the repository, and a `MergeUi` trait the app implements. The "porting your data model" guide is `docs/porting.md`.
 - [x] `docs/` guide: `docs/concepts.md` (includes store selection and no_std/WASM), `docs/conflicts.md`, `docs/porting.md` and `docs/faq.md` (versus Git and CRDTs).
-- [ ] WASM demo page showing branch / edit / merge in the browser.
+- [~] WASM demo page showing branch / edit / merge in the browser. `wasm/` has the wasm-bindgen crate (it builds for wasm32 and for the host), and `wasm/www/index.html` drives it. Not yet run in a browser, and the build steps are in `wasm/README.md`.
 - [ ] Release prep: publishable dependencies (tpt-crypto, tpt-testkit) so `cargo add tpt-version` works.
 
 ### Tier 3: missing features

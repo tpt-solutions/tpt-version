@@ -36,6 +36,7 @@
   treats a list as a set, and a removal on either side wins.
 - Criss-cross merges use a virtual base built from every best common ancestor
   (`dag::merge_bases`), instead of one arbitrary base.
+- `wasm/`: a wasm-bindgen crate and a static demo page (not yet run in a browser).
 - Fixed: maps and trees decode only with strictly ascending keys. Before, an
   out-of-order encoding of the same value was accepted, and it hashed differently.
 - `tpt` command-line tool (`src/bin/tpt.rs`, default `cli` feature), with `init` and `diff` added.

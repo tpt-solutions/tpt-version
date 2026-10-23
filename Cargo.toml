@@ -61,7 +61,7 @@ tpt-testkit = { git = "https://github.com/tpt-solutions/tpt-testkit", rev = "e77
 proptest = "1"
 
 [workspace]
-members = ["derive"]
+members = ["derive", "wasm"]
 
 
 [[bin]]
