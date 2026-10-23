@@ -1,8 +1,6 @@
 //! Commit signing with Ed25519. A signature covers a commit's canonical bytes
 //! without the signature field itself.
 
-use tpt_crypto_curve::edwards25519::EdwardsPoint;
-use tpt_crypto_field::CtEq;
 use tpt_crypto_sig::ed25519::{Signature as Ed25519Signature, SigningKey, VerifyingKey};
 
 /// A signature over a commit, with the public key that produced it.
@@ -43,42 +41,14 @@ impl Signer for Ed25519Signer {
 
 /// Whether `signature` is a valid signature of `message` by its signer.
 ///
-/// Rejects small-order keys and commitments as well as the upstream checks.
-/// Otherwise an all-zero key and signature would verify for any message, because
-/// the cofactored equation vanishes on torsion points. This matches
-/// `verify_strict` in the Ed25519 ecosystem.
+/// The strict checks, including rejection of small-order keys and commitments,
+/// live in `tpt-crypto-sig`'s `VerifyingKey::verify`.
 pub fn verify(signature: &Signature, message: &[u8]) -> bool {
-    let (Some(signer), Some(commitment)) = (
-        decode_point(&signature.signer),
-        decode_point(signature.bytes[..32].try_into().expect("32 bytes")),
-    ) else {
-        return false;
-    };
-    if is_small_order(&signer) || is_small_order(&commitment) {
-        return false;
-    }
     let Ok(key) = VerifyingKey::from_bytes(&signature.signer) else {
         return false;
     };
     key.verify(message, &Ed25519Signature::from_bytes(signature.bytes))
         .is_ok()
-}
-
-fn decode_point(bytes: &[u8; 32]) -> Option<EdwardsPoint> {
-    let point = EdwardsPoint::decompress(bytes);
-    if point.is_some().into_bool() {
-        Some(point.unwrap())
-    } else {
-        None
-    }
-}
-
-/// Whether `point` has order dividing 8, so multiplying by the cofactor reaches the identity.
-fn is_small_order(point: &EdwardsPoint) -> bool {
-    point
-        .mul_by_cofactor()
-        .ct_eq(&EdwardsPoint::identity())
-        .into_bool()
 }
 
 #[cfg(test)]

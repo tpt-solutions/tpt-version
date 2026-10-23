@@ -20,9 +20,6 @@ s3 = ["std"]
 [dependencies]
 tpt-crypto-hash = { git = "https://github.com/tpt-solutions/tpt-crypto", default-features = false, features = ["alloc"] }
 tpt-crypto-sig = { git = "https://github.com/tpt-solutions/tpt-crypto", default-features = false, features = ["alloc"] }
-# Point arithmetic for the strict small-order checks in `sign::verify`.
-tpt-crypto-curve = { git = "https://github.com/tpt-solutions/tpt-crypto", default-features = false, features = ["alloc"] }
-tpt-crypto-field = { git = "https://github.com/tpt-solutions/tpt-crypto", default-features = false, features = ["alloc"] }
 
 [[example]]
 name = "cad_branch_merge"

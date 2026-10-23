@@ -5,17 +5,17 @@ version = 4
 [[package]]
 name = "tpt-crypto-core"
 version = "0.1.0"
-source = "git+https://github.com/tpt-solutions/tpt-crypto#a3bd3e31cfab1d5b5fb8b9b49593d10f9039d59d"
+source = "git+https://github.com/tpt-solutions/tpt-crypto#8b73d9b13cb1432547a03dd58d8cf8d6231e3784"
 
 [[package]]
 name = "tpt-crypto-ct"
 version = "0.1.0"
-source = "git+https://github.com/tpt-solutions/tpt-crypto#a3bd3e31cfab1d5b5fb8b9b49593d10f9039d59d"
+source = "git+https://github.com/tpt-solutions/tpt-crypto#8b73d9b13cb1432547a03dd58d8cf8d6231e3784"
 
 [[package]]
 name = "tpt-crypto-curve"
 version = "0.1.0"
-source = "git+https://github.com/tpt-solutions/tpt-crypto#a3bd3e31cfab1d5b5fb8b9b49593d10f9039d59d"
+source = "git+https://github.com/tpt-solutions/tpt-crypto#8b73d9b13cb1432547a03dd58d8cf8d6231e3784"
 dependencies = [
  "tpt-crypto-core",
  "tpt-crypto-ct",
@@ -26,7 +26,7 @@ dependencies = [
 [[package]]
 name = "tpt-crypto-field"
 version = "0.1.0"
-source = "git+https://github.com/tpt-solutions/tpt-crypto#a3bd3e31cfab1d5b5fb8b9b49593d10f9039d59d"
+source = "git+https://github.com/tpt-solutions/tpt-crypto#8b73d9b13cb1432547a03dd58d8cf8d6231e3784"
 dependencies = [
  "tpt-crypto-ct",
 ]
@@ -34,7 +34,7 @@ dependencies = [
 [[package]]
 name = "tpt-crypto-hash"
 version = "0.1.0"
-source = "git+https://github.com/tpt-solutions/tpt-crypto#a3bd3e31cfab1d5b5fb8b9b49593d10f9039d59d"
+source = "git+https://github.com/tpt-solutions/tpt-crypto#8b73d9b13cb1432547a03dd58d8cf8d6231e3784"
 dependencies = [
  "tpt-crypto-core",
  "tpt-crypto-ct",
@@ -43,7 +43,7 @@ dependencies = [
 [[package]]
 name = "tpt-crypto-sig"
 version = "0.1.0"
-source = "git+https://github.com/tpt-solutions/tpt-crypto#a3bd3e31cfab1d5b5fb8b9b49593d10f9039d59d"
+source = "git+https://github.com/tpt-solutions/tpt-crypto#8b73d9b13cb1432547a03dd58d8cf8d6231e3784"
 dependencies = [
  "tpt-crypto-core",
  "tpt-crypto-ct",
@@ -56,8 +56,6 @@ dependencies = [
 name = "tpt-version"
 version = "0.1.0"
 dependencies = [
- "tpt-crypto-curve",
- "tpt-crypto-field",
  "tpt-crypto-hash",
  "tpt-crypto-sig",
 ]

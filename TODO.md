@@ -6,8 +6,8 @@ Source of truth: [spec.txt](spec.txt). Tick items as they are completed.
 ## Decisions (from clarification)
 - Single crate `tpt-version`, Rust edition 2024, `#![no_std]` + `alloc` by default; features `std` (default), `s3`.
 - Hash: SHA-256 via `tpt-crypto-hash::sha2::sha256`.
-- Ed25519 via `tpt-crypto-sig::ed25519`, with a strict small-order check added in `sign::verify` (see open items).
-- Git dependencies on `tpt-solutions/tpt-crypto` only (`tpt-crypto-hash`, `tpt-crypto-sig`, `tpt-crypto-curve`, `tpt-crypto-field`). `tpt-testkit` is not used yet.
+- Ed25519 via `tpt-crypto-sig::ed25519`. Small-order keys and commitments are rejected upstream (see open items).
+- Git dependencies on `tpt-solutions/tpt-crypto` only (`tpt-crypto-hash`, `tpt-crypto-sig`). `tpt-testkit` is not used yet.
 - **Deviation:** `tpt-primitives` is not `no_std` and has no `EntityId`/`ActorId` types, so it is not a dependency. `EntityId` and `ActorId` are local 16-byte identifiers.
 - **Deviation:** `tpt-uir-core` has no generic value tree (only IR ops and attributes), so `UirNode` (scalar / list / map) is defined in this crate. Its encoding is pinned by a test.
 - `tpt-model` has no code, so a local `Entity` trait stands in (`id()`, `to_uir()`, `from_uir()`).
@@ -87,4 +87,4 @@ Source of truth: [spec.txt](spec.txt). Tick items as they are completed.
 ## Open items to confirm later
 - [x] Exact tpt-uir value/node types after reading the repo. Resolved as a deviation: `UirNode` is defined locally (see Decisions).
 - [ ] Whether tpt-testkit is usable as a git dev-dependency (`publish = false`, placeholder repo URL). Not evaluated, because nothing needs it yet.
-- [~] **Upstream bug in `tpt-crypto-sig`:** `VerifyingKey::verify` accepts small-order public keys. An all-zero key and signature verify for any message on the cofactored equation. `tpt-version` works around it in `sign::verify`, which rejects small-order keys and commitments. The fix is committed locally as `de7a923` on branch `fix/reject-small-order-ed25519-keys` in a `tpt-crypto` clone. It is exported as `0001-tpt-crypto-sig-reject-small-order-Ed25519-public-key.patch` in the session scratchpad. It has a regression test that fails without the fix. It is **not pushed** to `tpt-solutions/tpt-crypto`. Once it lands upstream and this crate's git dependency picks it up, remove the workaround in `sign::verify`.
+- [x] **Upstream bug in `tpt-crypto-sig` (fixed).** `VerifyingKey::verify` accepted small-order public keys, so an all-zero key and signature verified for any message. The fix is on `tpt-solutions/tpt-crypto` master as `8b73d9b`. This crate pins that revision in `Cargo.lock`, and the local workaround in `sign::verify` has been removed. `tests/history.rs` covers the forgery case.
