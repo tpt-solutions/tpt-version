@@ -15,10 +15,10 @@ const MAX_DEPTH: usize = 128;
 
 /// A leaf value.
 ///
-/// Floats compare by IEEE equality, so a `NaN` field never equals itself and
-/// will surface as a conflict in a merge. Floats hash by bit pattern, so `0.0`
-/// and `-0.0` are different content.
-#[derive(Debug, Clone, PartialEq)]
+/// Floats compare by bit pattern, the same way they are encoded. A `NaN` equals
+/// an identical `NaN`, so an unchanged field is not a phantom change or
+/// conflict. `0.0` and `-0.0` are different content.
+#[derive(Debug, Clone)]
 pub enum Scalar {
     /// No value.
     Null,
@@ -32,6 +32,20 @@ pub enum Scalar {
     Text(String),
     /// Raw bytes.
     Bytes(Vec<u8>),
+}
+
+impl PartialEq for Scalar {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Null, Self::Null) => true,
+            (Self::Bool(a), Self::Bool(b)) => a == b,
+            (Self::Int(a), Self::Int(b)) => a == b,
+            (Self::Float(a), Self::Float(b)) => a.to_bits() == b.to_bits(),
+            (Self::Text(a), Self::Text(b)) => a == b,
+            (Self::Bytes(a), Self::Bytes(b)) => a == b,
+            _ => false,
+        }
+    }
 }
 
 /// A structured value: a scalar, a list, or a map from field name to value.
@@ -70,6 +84,27 @@ impl From<&str> for UirNode {
 }
 
 impl UirNode {
+    /// Checks that the value nests no deeper than decoding accepts, so anything
+    /// written can be read back.
+    pub(crate) fn check_depth(&self) -> Result<(), ObjectError> {
+        if self.within_depth(0) {
+            Ok(())
+        } else {
+            Err(ObjectError::InvalidValue("nesting depth"))
+        }
+    }
+
+    fn within_depth(&self, depth: usize) -> bool {
+        if depth > MAX_DEPTH {
+            return false;
+        }
+        match self {
+            Self::Scalar(_) => true,
+            Self::List(items) => items.iter().all(|item| item.within_depth(depth + 1)),
+            Self::Map(entries) => entries.values().all(|value| value.within_depth(depth + 1)),
+        }
+    }
+
     pub(crate) fn encode(&self, w: &mut Writer) {
         match self {
             Self::Scalar(scalar) => {

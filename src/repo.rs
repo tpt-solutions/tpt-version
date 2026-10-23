@@ -15,6 +15,7 @@ use crate::merge::{self, MergeResult, Resolution};
 use crate::object::{ActorId, Commit, Conflict, ContentHash, EntityId, Object, Tree};
 use crate::sign::{Signature, Signer};
 use crate::store::{CasStore, RefStore, load_entity, load_tree, store_object};
+use crate::uir::UirNode;
 
 /// The branch a fresh repository starts on.
 pub const DEFAULT_BRANCH: &str = "main";
@@ -63,7 +64,9 @@ impl Clock for SystemClock {
 }
 
 /// Checks a branch name: ASCII letters, digits, `.`, `_`, `-` and `/`, with no
-/// empty, leading, trailing or doubled separators.
+/// empty, leading, trailing or doubled separators. Each `/`-separated part must
+/// also be usable as a file name on every supported platform: it may not end
+/// in `.lock`, and it may not be a Windows device name such as `CON` or `NUL`.
 pub fn validate_branch_name(name: &str) -> Result<(), RepoError> {
     let valid = !name.is_empty()
         && name.len() <= 200
@@ -73,12 +76,27 @@ pub fn validate_branch_name(name: &str) -> Result<(), RepoError> {
         && !name.contains("//")
         && name
             .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '/'));
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '/'))
+        && name
+            .split('/')
+            .all(|part| !part.ends_with(".lock") && !is_windows_device_name(part));
     if valid {
         Ok(())
     } else {
         Err(RepoError::InvalidBranchName(name.into()))
     }
+}
+
+/// Windows reserves these names in every directory, with or without an
+/// extension (`CON.txt` is still `CON`), and ignores case.
+fn is_windows_device_name(part: &str) -> bool {
+    const RESERVED: [&str; 4] = ["CON", "PRN", "AUX", "NUL"];
+    let stem = part.split('.').next().unwrap_or(part).to_ascii_uppercase();
+    RESERVED.contains(&stem.as_str())
+        || (stem.len() == 4
+            && (stem.starts_with("COM") || stem.starts_with("LPT"))
+            && stem.as_bytes()[3].is_ascii_digit()
+            && stem.as_bytes()[3] != b'0')
 }
 
 /// A versioned collection of entities.
@@ -104,6 +122,11 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
     pub fn open(store: S, clock: C, branch: &str) -> Result<Self, RepoError> {
         validate_branch_name(branch)?;
         let head = store.read_ref(branch)?;
+        if head.is_none() {
+            // The first commit on an unborn branch creates it, so it must not
+            // clash with an existing branch either.
+            ensure_no_name_clash(&store, branch)?;
+        }
         let staged = match head {
             Some(commit) => load_tree(&store, &dag::commit_tree(&store, &commit)?)?.entries,
             None => BTreeMap::new(),
@@ -147,10 +170,16 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
     }
 
     /// Stages an entity, replacing any staged version.
+    ///
+    /// The stored form must read back as an entity with the same id, and it
+    /// must be within the nesting depth that decoding accepts. Otherwise the
+    /// entity could be stored but never loaded, or loaded under another id.
     pub fn put_entity<E: Entity>(&mut self, entity: &E) -> Result<(), RepoError> {
         let id = entity.id();
         self.ensure_not_conflicted(&id)?;
-        let hash = store_object(&mut self.store, &Object::Entity(entity.to_uir()))?;
+        let node = entity.to_uir();
+        check_storable::<E>(&node, &id)?;
+        let hash = store_object(&mut self.store, &Object::Entity(node))?;
         self.staged.insert(id, hash);
         Ok(())
     }
@@ -171,6 +200,13 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
     }
 
     /// Snapshots the working copy into a commit and advances the current branch.
+    ///
+    /// Two cases are allowed on purpose:
+    /// - A commit with no changes is recorded anyway, as Git does, so a message
+    ///   or a merge parent is never lost.
+    /// - With no branch checked out (after [`Repository::checkout`]), the commit
+    ///   moves no ref. It is reachable only through its hash, so call
+    ///   [`Repository::branch`] on the returned hash to keep it.
     pub fn commit(&mut self, message: &str, author: &ActorId) -> Result<ContentHash, RepoError> {
         if !self.conflicts.is_empty() {
             return Err(RepoError::UnresolvedConflicts(self.conflicts.len()));
@@ -200,8 +236,8 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
         }
 
         let hash = store_object(&mut self.store, &Object::Commit(commit))?;
-        if let Some(name) = &self.branch {
-            self.store.write_ref(name, hash)?;
+        if let Some(name) = self.branch.clone() {
+            self.advance_branch(&name, self.head, hash)?;
         }
         self.head = Some(hash);
         Ok(hash)
@@ -213,8 +249,13 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
         if self.store.read_ref(name)?.is_some() {
             return Err(RepoError::BranchExists(name.into()));
         }
+        ensure_no_name_clash(&self.store, name)?;
         dag::load_commit(&self.store, &commit)?;
-        self.store.write_ref(name, commit)?;
+        // Creating the branch must not overwrite one that appeared since the
+        // check above.
+        if !self.store.compare_and_swap_ref(name, None, commit)? {
+            return Err(RepoError::BranchExists(name.into()));
+        }
         Ok(())
     }
 
@@ -334,7 +375,10 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
         let chosen = match resolution {
             Resolution::Ours => self.conflicts[index].ours,
             Resolution::Theirs => self.conflicts[index].theirs,
-            Resolution::Custom(node) => Some(store_object(&mut self.store, &Object::Entity(node))?),
+            Resolution::Custom(node) => {
+                node.check_depth()?;
+                Some(store_object(&mut self.store, &Object::Entity(node))?)
+            }
         };
         self.conflicts.remove(index);
         match chosen {
@@ -349,13 +393,29 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
     }
 
     fn move_to(&mut self, target: ContentHash) -> Result<(), RepoError> {
-        self.staged = commit_entries(&self.store, &target)?;
+        let staged = commit_entries(&self.store, &target)?;
+        if let Some(name) = self.branch.clone() {
+            self.advance_branch(&name, self.head, target)?;
+        }
+        self.staged = staged;
         self.head = Some(target);
         self.merge_parents.clear();
-        if let Some(name) = &self.branch {
-            self.store.write_ref(name, target)?;
-        }
         Ok(())
+    }
+
+    /// Moves `name` from `expected` to `new`, refusing if another writer has
+    /// moved it since this repository last read it.
+    fn advance_branch(
+        &mut self,
+        name: &str,
+        expected: Option<ContentHash>,
+        new: ContentHash,
+    ) -> Result<(), RepoError> {
+        if self.store.compare_and_swap_ref(name, expected, new)? {
+            Ok(())
+        } else {
+            Err(RepoError::RefMoved(name.into()))
+        }
     }
 
     fn head_entries(&self) -> Result<BTreeMap<EntityId, ContentHash>, RepoError> {
@@ -383,6 +443,36 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
             Ok(())
         }
     }
+}
+
+/// Checks that an entity's stored form can be loaded again under its own id.
+fn check_storable<E: Entity>(node: &UirNode, id: &EntityId) -> Result<(), RepoError> {
+    node.check_depth()?;
+    if E::from_uir(node)?.id() != *id {
+        return Err(RepoError::IdMismatch(*id));
+    }
+    Ok(())
+}
+
+/// Refuses a new branch name that would collide with an existing one on a
+/// case-insensitive file system (`Main` vs `main`), or that would need an
+/// existing branch to be a directory (`a` vs `a/b`).
+fn ensure_no_name_clash<S: RefStore>(store: &S, name: &str) -> Result<(), RepoError> {
+    let lower = name.to_ascii_lowercase();
+    let nested_under = alloc::format!("{lower}/");
+    for existing in store.list_refs()? {
+        let folded = existing.to_ascii_lowercase();
+        let clashes = folded == lower
+            || folded.starts_with(&nested_under)
+            || lower.starts_with(&alloc::format!("{folded}/"));
+        if clashes {
+            return Err(RepoError::BranchNameClash {
+                name: name.into(),
+                existing,
+            });
+        }
+    }
+    Ok(())
 }
 
 fn commit_entries<S: CasStore>(

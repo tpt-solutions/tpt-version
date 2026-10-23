@@ -20,9 +20,9 @@ fn entity_id() -> impl Strategy<Value = EntityId> {
 }
 
 fn entity() -> impl Strategy<Value = Object> {
-    // NaN never equals itself, so it cannot round-trip under PartialEq.
-    let finite = prop::num::f64::NORMAL | prop::num::f64::ZERO;
-    (any::<u8>(), finite, finite, finite)
+    // Floats compare by bit pattern, so NaN and infinities round-trip too.
+    let any_float = prop::num::f64::ANY;
+    (any::<u8>(), any_float, any_float, any_float)
         .prop_map(|(n, x, y, z)| Object::Entity(vertex(n, [x, y, z]).to_uir()))
 }
 

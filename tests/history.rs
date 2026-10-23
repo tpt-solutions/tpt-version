@@ -59,6 +59,11 @@ fn branch_names_are_validated() {
         "trail.",
         "has space",
         "x\\y",
+        "feature/x.lock",
+        "CON",
+        "nul.txt",
+        "lpt1/topic",
+        "a/Aux.draft",
     ] {
         assert!(
             matches!(
@@ -69,6 +74,35 @@ fn branch_names_are_validated() {
         );
     }
     repo.branch("feature/cad-v2", head).unwrap();
+}
+
+#[test]
+fn branch_names_that_clash_are_refused() {
+    let mut repo = new_repo();
+    repo.put_entity(&vertex(1, [0.0; 3])).unwrap();
+    let head = repo.commit("init", &author()).unwrap();
+    repo.branch("feature/cad", head).unwrap();
+
+    // A case-only difference is the same branch on Windows and macOS.
+    assert!(matches!(
+        repo.branch("Main", head),
+        Err(RepoError::BranchNameClash { .. })
+    ));
+    assert!(matches!(
+        repo.branch("FEATURE/CAD", head),
+        Err(RepoError::BranchNameClash { .. })
+    ));
+    // `feature` cannot be a branch while `feature/cad` exists, and vice versa.
+    assert!(matches!(
+        repo.branch("feature", head),
+        Err(RepoError::BranchNameClash { .. })
+    ));
+    repo.branch("feature-two", head).unwrap();
+    repo.branch("feature/cad-v2", head).unwrap();
+    assert_eq!(
+        repo.list_branches().unwrap(),
+        ["feature-two", "feature/cad", "feature/cad-v2", "main"]
+    );
 }
 
 #[test]
