@@ -127,7 +127,7 @@ Plan: see the review notes. Tier 1 and Tier 2 come first.
 - [ ] Sequence-aware list merge with per-field list policy (`Atomic`, `Set`, `Ordered`).
 - [~] Per-field merge strategies. `MergePolicy` on the repository (`with_merge_policy`) gives numeric fields a `FieldStrategy`: `Sum`, `Max` or `Min`. Last-writer-wins and text three-way merge are not done, and the strategies are not yet declared on `Entity`.
 - [ ] Post-merge semantic validators (constraints, formula references).
-- [~] Time-travel queries (`entity_at`) are done. `as_of` (a query by time) and diff-of-diffs for merge review are not.
+- [~] Time-travel queries: `entity_at` (by commit), `commit_as_of` and `entity_as_of` (by timestamp) are done. Diff-of-diffs for merge review is not.
 - [ ] Signed review / approval objects stored in the CAS.
 - [~] JSON diff output (`export::diff_to_json`, and `node_json` for values), written by hand with no serde dependency. HTML output is not done.
 - [ ] Live-collaboration op log on top of the DAG.

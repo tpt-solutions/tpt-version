@@ -27,7 +27,8 @@
 - `docs/`: concepts, conflict cookbook, porting guide and FAQ.
 - `sync::push` and `sync::fetch` copy reachable objects between any two stores,
   and move the branch only fast-forward.
-- `Repository::entity_at` reads an entity from a past commit.
+- `Repository::entity_at` reads an entity from a past commit, and
+  `commit_as_of` / `entity_as_of` find the state at a timestamp.
 - `export::diff_to_json` and `export::node_json`: JSON for diffs and values.
 - `app_template` example: a derived entity, a workspace type, and a merge UI trait.
 - `MergePolicy` and `FieldStrategy` (`Sum`, `Max`, `Min`): numeric fields changed

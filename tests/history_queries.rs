@@ -94,3 +94,28 @@ fn entity_at_reads_a_past_commit_not_the_working_copy() {
     let missing: Option<common::Vertex> = repo.entity_at(&before, &id(5)).unwrap();
     assert!(missing.is_none());
 }
+
+#[test]
+fn entity_as_of_reads_the_newest_commit_at_or_before_a_time() {
+    let mut repo = new_repo();
+    repo.put_entity(&vertex(1, [0.0; 3])).unwrap();
+    let first = repo.commit("first", &author()).unwrap();
+    repo.put_entity(&vertex(1, [7.0; 3])).unwrap();
+    let second = repo.commit("second", &author()).unwrap();
+    repo.put_entity(&vertex(1, [9.0; 3])).unwrap();
+    repo.commit("third", &author()).unwrap();
+
+    let log = repo.log("main").unwrap();
+    let (t_first, t_second) = (log[2].timestamp, log[1].timestamp);
+    assert_eq!(repo.commit_as_of(t_first).unwrap(), Some(first));
+    assert_eq!(repo.commit_as_of(t_second).unwrap(), Some(second));
+    assert_eq!(repo.commit_as_of(t_first - 1).unwrap(), None);
+
+    let then: common::Vertex = repo.entity_as_of(t_second, &id(1)).unwrap().unwrap();
+    assert_eq!(then.position, [7.0; 3]);
+    assert_eq!(
+        repo.entity_as_of::<common::Vertex>(t_first - 1, &id(1))
+            .unwrap(),
+        None
+    );
+}

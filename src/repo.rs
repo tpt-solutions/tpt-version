@@ -339,6 +339,27 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
         Ok(Some(E::from_uir(&node)?))
     }
 
+    /// The newest commit on the current branch's history at or before
+    /// `timestamp`, or `None` if every commit is later.
+    pub fn commit_as_of(&self, timestamp: u64) -> Result<Option<ContentHash>, RepoError> {
+        match self.head {
+            Some(head) => history::commit_as_of(&self.store, head, timestamp),
+            None => Ok(None),
+        }
+    }
+
+    /// The entity as it stood at `timestamp`, read from [`Repository::commit_as_of`].
+    pub fn entity_as_of<E: Entity>(
+        &self,
+        timestamp: u64,
+        id: &EntityId,
+    ) -> Result<Option<E>, RepoError> {
+        match self.commit_as_of(timestamp)? {
+            Some(commit) => self.entity_at(&commit, id),
+            None => Ok(None),
+        }
+    }
+
     /// The entity as it was in `commit`, read from that commit's snapshot. The
     /// working copy is not consulted.
     pub fn entity_at<E: Entity>(

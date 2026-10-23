@@ -133,3 +133,21 @@ fn lookup<'a>(node: &'a UirNode, path: &[String]) -> Option<&'a UirNode> {
     }
     Some(current)
 }
+
+/// The newest commit reachable from `head` whose timestamp is at or before
+/// `timestamp`. Ties on timestamp go to the larger hash, so the answer is the
+/// same on every machine.
+pub(crate) fn commit_as_of<S: CasStore>(
+    store: &S,
+    head: ContentHash,
+    timestamp: u64,
+) -> Result<Option<ContentHash>, RepoError> {
+    let mut best: Option<(u64, ContentHash)> = None;
+    for hash in dag::ancestors(store, &[head])? {
+        let at = dag::load_commit(store, &hash)?.timestamp;
+        if at <= timestamp && best.is_none_or(|current| (at, hash) > current) {
+            best = Some((at, hash));
+        }
+    }
+    Ok(best.map(|(_, hash)| hash))
+}
