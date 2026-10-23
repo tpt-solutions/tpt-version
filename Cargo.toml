@@ -1,0 +1,29 @@
+[package]
+name = "tpt-version"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Content-addressable, structure-aware version control for tpt-model entities"
+repository = "https://github.com/tpt-solutions/tpt-version"
+readme = "README.md"
+keywords = ["version-control", "merkle-dag", "cad", "merge", "no-std"]
+categories = ["data-structures", "no-std", "development-tools"]
+# Depends on git dependencies, so it cannot be published to crates.io yet.
+publish = false
+
+[features]
+default = ["std"]
+std = ["tpt-crypto-hash/std", "tpt-crypto-sig/std"]
+# S3-backed object store. Needs std, and the caller supplies the network client.
+s3 = ["std"]
+
+[dependencies]
+tpt-crypto-hash = { git = "https://github.com/tpt-solutions/tpt-crypto", default-features = false, features = ["alloc"] }
+tpt-crypto-sig = { git = "https://github.com/tpt-solutions/tpt-crypto", default-features = false, features = ["alloc"] }
+# Point arithmetic for the strict small-order checks in `sign::verify`.
+tpt-crypto-curve = { git = "https://github.com/tpt-solutions/tpt-crypto", default-features = false, features = ["alloc"] }
+tpt-crypto-field = { git = "https://github.com/tpt-solutions/tpt-crypto", default-features = false, features = ["alloc"] }
+
+[[example]]
+name = "cad_branch_merge"
+required-features = ["std"]
