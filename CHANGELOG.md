@@ -21,7 +21,33 @@
 - Ed25519 commit signing through the injected `Signer` trait. Signature checks
   reject small-order keys and commitments.
 - `no_std` + `alloc` core; WASM and Cortex-M targets check cleanly.
-- `cad_branch_merge` example.
+- `cad_branch_merge` example, plus `spreadsheet_cells`, `document_blocks`,
+  `file_store_cli`, `signed_history` and `s3_sync` examples.
+- `prelude` module. The README Quick Start is compiled as a doctest.
+- `docs/`: concepts, conflict cookbook, porting guide and FAQ.
+
+### Changed
+
+- `RefStore::compare_and_swap_ref`. `commit`, `merge` and `branch` use it, so a
+  stale repository gets `RepoError::RefMoved` instead of overwriting another
+  writer. The file-system store locks each ref with a `.lock` file while it
+  swaps. The S3 store uses ETags through the new `ConditionalClient` trait.
+- `CasStore::contains` returns `Result<bool, StoreError>`, so a backend failure
+  is no longer reported as a missing object.
+- `S3Store` implements `RefStore`, so branches can live in S3.
+- Floats compare by bit pattern, so an unchanged `NaN` is not a change.
+- `put_entity` refuses an entity whose nesting exceeds the decode limit, or
+  whose stored form loads under a different id (`RepoError::IdMismatch`).
+- Branch names reject a `.lock` suffix, Windows device names, and case-only or
+  path-prefix clashes (`RepoError::BranchNameClash`).
+- Merge-base search loads each commit once. It was quadratic in the number of
+  common ancestors.
+- Error enums are `#[non_exhaustive]`.
+
+### Fixed
+
+- File-system writes use unique temp files and `sync_all` before the rename, so
+  concurrent writers do not share a temp file or publish unsynced contents.
 
 ### Design decisions
 

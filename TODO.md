@@ -88,3 +88,54 @@ Source of truth: [spec.txt](spec.txt). Tick items as they are completed.
 - [x] Exact tpt-uir value/node types after reading the repo. Resolved as a deviation: `UirNode` is defined locally (see Decisions).
 - [x] tpt-testkit is a dev-dependency, pinned to `tpt-solutions/tpt-testkit` rev `e77a901` (features `golden`, `property`). Used for golden fixtures and proptest round-trips (`tests/golden.rs`, `tests/round_trip.rs`). It is not in the normal dependency graph. It requires Rust 1.97, the pinned toolchain here. `bench` is not enabled, see the benchmarks item.
 - [x] **Upstream bug in `tpt-crypto-sig` (fixed).** `VerifyingKey::verify` accepted small-order public keys, so an all-zero key and signature verified for any message. The fix is on `tpt-solutions/tpt-crypto` master as `8b73d9b`. This crate pins that revision in `Cargo.lock`, and the local workaround in `sign::verify` has been removed. `tests/history.rs` covers the forgery case.
+
+## Review follow-ups (Oct 2026 platform review)
+Plan: see the review notes. Tier 1 and Tier 2 come first.
+
+### Tier 1: bugs and hazards
+- [x] `FileSystemStore::atomic_write`: unique temp file names (pid + counter) and `sync_all` before rename. Done; covered by the concurrency test in `tests/refs.rs`.
+- [x] Ref updates are last-writer-wins. Added `RefStore::compare_and_swap_ref` (FS uses a `.lock` file, S3 uses ETag `If-Match`), used by `commit`, `move_to` and `branch`; added `RepoError::RefMoved`.
+- [x] Branch names: reject `a` vs `a/b` prefix clashes, case-only collisions (Windows/macOS) and Windows reserved names (`CON`, `NUL`...). Test on the Windows CI leg.
+- [x] Nesting depth: decode caps at 128 but encode does not, so `put_entity` / `resolve_conflict(Custom)` can store an entity that can never be loaded. Enforce the cap on write.
+- [x] Floats: compare by bit pattern in merge and diff, so an unchanged `NaN` field is not a phantom conflict/change. Update the `Scalar` docs.
+- [x] `find_merge_base` / `is_ancestor` are roughly O(n^2) commit loads (each re-verifies signatures). Use a single two-sided BFS, a commit cache, optionally generation numbers; add a deep-history bench.
+- [x] `Repository::commit`: no-op and detached commits are allowed and documented on `commit()`. The author vs signer relation is documented on `Commit::author`.
+- [x] `put_entity`: nothing checks `entity.id()` against an id embedded in the UIR. Add a check or an `Entity` hook, and document it.
+- [x] `S3Store`: `contains` turns errors into `false`; S3 has no `RefStore`, so branches cannot live in S3. Surface errors and add a ref store (conditional PUT / ETag CAS).
+- [x] Tests for: FS concurrency, deep history performance, S3 + `Repository` end to end, ref-name collisions. Deep history is a bench case (`deep_history` in `benches/throughput.rs`, 18.7 ms release).
+
+### Tier 2: adoption
+- [x] Examples: `spreadsheet_cells`, `document_blocks`, `file_store_cli`, `signed_history`, `s3_sync`; each is linked from the README (`cargo run --example <name>`; `s3_sync` needs `--features s3`).
+- [ ] `#[derive(Entity)]` (derive crate or `macro_rules!`) to remove hand-written `to_uir` / `from_uir`.
+- [x] `prelude` module; the README is the crate docs, so its Quick Start is a doctest.
+- [~] App template (entity + repo + merge-UI callback): not started. The "porting your data model" guide is done (`docs/porting.md`).
+- [x] `docs/` guide: `docs/concepts.md` (includes store selection and no_std/WASM), `docs/conflicts.md`, `docs/porting.md` and `docs/faq.md` (versus Git and CRDTs).
+- [ ] WASM demo page showing branch / edit / merge in the browser.
+- [ ] Release prep: publishable dependencies (tpt-crypto, tpt-testkit) so `cargo add tpt-version` works.
+
+### Tier 3: missing features
+- [ ] `status`, `diff_working`, `reset`, `amend`, `revert`, `cherry_pick`.
+- [ ] Tags (immutable refs), optionally signed.
+- [ ] Per-entity `history` and field-level `blame`.
+- [ ] `fsck` (verify objects, signatures, refs) and `gc` (reachability).
+- [ ] `fetch` / `push` sync between stores, with a `Remote` abstraction.
+- [ ] Signature trust policy (`TrustedKeys`, require signed commits per branch).
+- [ ] Recursive merge for criss-cross histories.
+- [ ] Hierarchical trees for large models; packfiles / delta compression for the FS store.
+
+### Tier 4: innovative
+- [ ] Sequence-aware list merge with per-field list policy (`Atomic`, `Set`, `Ordered`).
+- [ ] Per-field merge strategies (counter sum, max, last-writer-wins, text three-way) declared on `Entity`.
+- [ ] Post-merge semantic validators (constraints, formula references).
+- [ ] Time-travel queries (`entity_at`, `as_of`) and diff-of-diffs for merge review.
+- [ ] Signed review / approval objects stored in the CAS.
+- [ ] `serde` / JSON / HTML diff output for a web viewer.
+- [ ] Live-collaboration op log on top of the DAG.
+
+### Tier 5: automation and usability
+- [ ] `tpt` CLI (`init`, `commit`, `log`, `diff`, `merge`, `branch`, `resolve`, `fsck`) behind a `cli` feature.
+- [~] CI: `cargo doc -D warnings` is done. Still open: `cargo deny` / audit, MSRV check, coverage, bench regression threshold.
+- [ ] `cargo-fuzz` targets for `Object::decode` and `merge_trees`.
+- [ ] Release automation (`release-plz` / `cargo-release`) and Dependabot for the pinned git revs.
+- [~] Error messages that suggest the next action; `#[non_exhaustive]` on error enums is done.
+- [ ] `pre_commit` / `post_merge` hook traits.
