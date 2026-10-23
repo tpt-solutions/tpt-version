@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use super::{CasStore, RefStore, verify};
+use super::{CasStore, PruneStore, RefStore, verify};
 use crate::error::StoreError;
 use crate::object::ContentHash;
 
@@ -78,6 +78,33 @@ impl CasStore for FileSystemStore {
 
     fn contains(&self, hash: &ContentHash) -> Result<bool, StoreError> {
         Ok(self.object_path(hash).is_file())
+    }
+}
+
+impl PruneStore for FileSystemStore {
+    fn hashes(&self) -> Result<Vec<ContentHash>, StoreError> {
+        let mut hashes = Vec::new();
+        for dir in fs::read_dir(self.root.join("objects")).map_err(io_error)? {
+            let dir = dir.map_err(io_error)?;
+            let prefix = dir.file_name().to_string_lossy().into_owned();
+            for file in fs::read_dir(dir.path()).map_err(io_error)? {
+                let file = file.map_err(io_error)?;
+                let rest = file.file_name().to_string_lossy().into_owned();
+                // Temp files from atomic_write carry extra suffixes and do not parse.
+                if let Ok(hash) = format!("{prefix}{rest}").parse::<ContentHash>() {
+                    hashes.push(hash);
+                }
+            }
+        }
+        Ok(hashes)
+    }
+
+    fn delete(&mut self, hash: &ContentHash) -> Result<bool, StoreError> {
+        match fs::remove_file(self.object_path(hash)) {
+            Ok(()) => Ok(true),
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(io_error(error)),
+        }
     }
 }
 

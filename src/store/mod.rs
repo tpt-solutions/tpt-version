@@ -36,6 +36,15 @@ pub trait CasStore {
     fn contains(&self, hash: &ContentHash) -> Result<bool, StoreError>;
 }
 
+/// A store that can list and delete its objects. Garbage collection needs this.
+pub trait PruneStore: CasStore {
+    /// Every object hash in the store, in no particular order.
+    fn hashes(&self) -> Result<Vec<ContentHash>, StoreError>;
+
+    /// Removes an object. Returns whether it was there.
+    fn delete(&mut self, hash: &ContentHash) -> Result<bool, StoreError>;
+}
+
 /// Named branch refs, each pointing at a commit.
 pub trait RefStore {
     /// The hash a ref points at, or `None` if the ref does not exist.

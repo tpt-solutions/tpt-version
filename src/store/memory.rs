@@ -4,7 +4,7 @@ use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use super::{CasStore, RefStore, verify};
+use super::{CasStore, PruneStore, RefStore, verify};
 use crate::error::StoreError;
 use crate::object::ContentHash;
 
@@ -30,6 +30,16 @@ impl CasStore for MemoryStore {
 
     fn contains(&self, hash: &ContentHash) -> Result<bool, StoreError> {
         Ok(self.objects.contains_key(hash))
+    }
+}
+
+impl PruneStore for MemoryStore {
+    fn hashes(&self) -> Result<Vec<ContentHash>, StoreError> {
+        Ok(self.objects.keys().copied().collect())
+    }
+
+    fn delete(&mut self, hash: &ContentHash) -> Result<bool, StoreError> {
+        Ok(self.objects.remove(hash).is_some())
     }
 }
 

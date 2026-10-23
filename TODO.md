@@ -117,7 +117,7 @@ Plan: see the review notes. Tier 1 and Tier 2 come first.
 - [ ] `status`, `diff_working`, `reset`, `amend`, `revert`, `cherry_pick`.
 - [ ] Tags (immutable refs), optionally signed.
 - [ ] Per-entity `history` and field-level `blame`.
-- [ ] `fsck` (verify objects, signatures, refs) and `gc` (reachability).
+- [x] `fsck` (verify objects, signatures, refs) and `gc` (reachability). `maintenance::fsck` collects every problem; `Repository::gc` roots on refs, HEAD, the working copy and any pending merge, and refuses to delete if a reachable object is missing. S3 does not implement `PruneStore` yet, so gc is FS and memory only.
 - [ ] `fetch` / `push` sync between stores, with a `Remote` abstraction.
 - [ ] Signature trust policy (`TrustedKeys`, require signed commits per branch).
 - [ ] Recursive merge for criss-cross histories.

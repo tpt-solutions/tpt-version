@@ -11,10 +11,11 @@ use core::cell::Cell;
 use crate::dag;
 use crate::entity::Entity;
 use crate::error::RepoError;
+use crate::maintenance::{self, GcReport};
 use crate::merge::{self, MergeResult, Resolution};
 use crate::object::{ActorId, Commit, Conflict, ContentHash, EntityId, Object, Tree};
 use crate::sign::{Signature, Signer};
-use crate::store::{CasStore, RefStore, load_entity, load_tree, store_object};
+use crate::store::{CasStore, PruneStore, RefStore, load_entity, load_tree, store_object};
 use crate::uir::UirNode;
 
 /// The branch a fresh repository starts on.
@@ -442,6 +443,38 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
         } else {
             Ok(())
         }
+    }
+}
+
+impl<S: CasStore + RefStore + PruneStore, C> Repository<S, C> {
+    /// Removes stored objects that nothing can reach.
+    ///
+    /// The roots are every branch, the checked-out commit, the working copy and
+    /// any pending merge, so uncommitted work is kept. If a reachable object is
+    /// missing, nothing is removed and the error says which one.
+    ///
+    /// A writer in another process may store an object just before it updates a
+    /// ref. Run `gc` only when no other writer is active on this store.
+    pub fn gc(&mut self) -> Result<GcReport, RepoError> {
+        let mut roots = Vec::new();
+        for name in self.store.list_refs()? {
+            roots.extend(self.store.read_ref(&name)?);
+        }
+        roots.extend(self.head);
+        roots.extend(self.merge_parents.iter().copied());
+        roots.extend(self.staged.values().copied());
+
+        let live = maintenance::reachable(&self.store, roots)?;
+        let mut removed = 0;
+        for hash in self.store.hashes()? {
+            if !live.contains(&hash) && self.store.delete(&hash)? {
+                removed += 1;
+            }
+        }
+        Ok(GcReport {
+            kept: live.len(),
+            removed,
+        })
     }
 }
 
