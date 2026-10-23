@@ -13,11 +13,13 @@ use crate::object::ContentHash;
 
 /// The S3 operations the store needs. Errors are plain strings so any SDK can implement this.
 pub trait ObjectClient {
+    /// Uploads `body` under `key`, replacing any existing object.
     fn put_object(&mut self, key: &str, body: &[u8]) -> Result<(), String>;
 
     /// Returns `Ok(None)` when the key does not exist.
     fn get_object(&self, key: &str) -> Result<Option<Vec<u8>>, String>;
 
+    /// Whether an object exists under `key`, without fetching its body.
     fn head_object(&self, key: &str) -> Result<bool, String>;
 }
 

@@ -6,13 +6,17 @@ use tpt_crypto_sig::ed25519::{Signature as Ed25519Signature, SigningKey, Verifyi
 /// A signature over a commit, with the public key that produced it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Signature {
+    /// The Ed25519 public key that produced the signature.
     pub signer: [u8; 32],
+    /// The 64-byte Ed25519 signature.
     pub bytes: [u8; 64],
 }
 
 /// Produces commit signatures. Injected so keys can live in hardware or an agent.
 pub trait Signer {
+    /// The 32-byte public key that verifies this signer's signatures.
     fn public_key(&self) -> [u8; 32];
+    /// Signs `message`, returning the 64-byte signature.
     fn sign(&self, message: &[u8]) -> [u8; 64];
 }
 
@@ -22,6 +26,7 @@ pub struct Ed25519Signer {
 }
 
 impl Ed25519Signer {
+    /// A signer for the key derived from `seed`.
     pub fn from_seed(seed: [u8; 32]) -> Self {
         Self {
             key: SigningKey::from_seed(seed),

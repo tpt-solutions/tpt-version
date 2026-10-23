@@ -20,19 +20,28 @@ const MAX_DEPTH: usize = 128;
 /// and `-0.0` are different content.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Scalar {
+    /// No value.
     Null,
+    /// A boolean.
     Bool(bool),
+    /// A signed integer.
     Int(i64),
+    /// A 64-bit float.
     Float(f64),
+    /// UTF-8 text.
     Text(String),
+    /// Raw bytes.
     Bytes(Vec<u8>),
 }
 
 /// A structured value: a scalar, a list, or a map from field name to value.
 #[derive(Debug, Clone, PartialEq)]
 pub enum UirNode {
+    /// A leaf value.
     Scalar(Scalar),
+    /// An ordered sequence of values. Merged as one whole value.
     List(Vec<UirNode>),
+    /// Named fields. Merged field by field.
     Map(BTreeMap<String, UirNode>),
 }
 

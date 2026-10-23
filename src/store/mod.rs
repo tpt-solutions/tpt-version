@@ -31,12 +31,15 @@ pub trait CasStore {
     /// Returns the bytes stored under `hash`, verified against it.
     fn get(&self, hash: &ContentHash) -> Result<Vec<u8>, StoreError>;
 
+    /// Whether an object is stored under `hash`.
     fn contains(&self, hash: &ContentHash) -> bool;
 }
 
 /// Named branch refs, each pointing at a commit.
 pub trait RefStore {
+    /// The hash a ref points at, or `None` if the ref does not exist.
     fn read_ref(&self, name: &str) -> Result<Option<ContentHash>, StoreError>;
+    /// Points a ref at `hash`, creating it if needed.
     fn write_ref(&mut self, name: &str, hash: ContentHash) -> Result<(), StoreError>;
 
     /// Returns whether a ref was removed.

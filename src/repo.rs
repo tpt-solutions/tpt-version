@@ -21,6 +21,7 @@ pub const DEFAULT_BRANCH: &str = "main";
 
 /// A source of commit timestamps. Injected so histories can be reproduced.
 pub trait Clock {
+    /// The timestamp for the next commit.
     fn now(&self) -> u64;
 }
 
@@ -31,6 +32,7 @@ pub struct LogicalClock {
 }
 
 impl LogicalClock {
+    /// A clock whose first call to [`Clock::now`] returns `value`.
     pub fn starting_at(value: u64) -> Self {
         Self {
             next: Cell::new(value),
@@ -124,6 +126,7 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
         self
     }
 
+    /// The underlying store, for reading objects directly.
     pub fn store(&self) -> &S {
         &self.store
     }
@@ -221,6 +224,7 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
         Ok(self.store.read_ref(name)?)
     }
 
+    /// All branch names, sorted.
     pub fn list_branches(&self) -> Result<Vec<String>, RepoError> {
         Ok(self.store.list_refs()?)
     }

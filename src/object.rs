@@ -117,6 +117,7 @@ impl ContentHash {
 /// A snapshot of entities: each entity id maps to the hash of its current version.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Tree {
+    /// Entity id to the hash of that entity's current version.
     pub entries: BTreeMap<EntityId, ContentHash>,
 }
 
@@ -128,11 +129,17 @@ pub struct Tree {
 /// itself, so there is no circularity.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Commit {
+    /// The hash of the snapshot this commit records.
     pub tree_hash: ContentHash,
+    /// The commits this one follows. Two for a merge commit, none for a root.
     pub parents: Vec<ContentHash>,
+    /// Who made the commit.
     pub author: ActorId,
+    /// When the commit was made, from the repository's clock.
     pub timestamp: u64,
+    /// The commit message.
     pub message: String,
+    /// The signature, if the repository signs its commits.
     pub signature: Option<Signature>,
 }
 
@@ -150,10 +157,15 @@ impl Commit {
 /// resolution can pick either one.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Conflict {
+    /// The conflicted entity.
     pub entity: EntityId,
+    /// The common ancestor's version, or `None` if the entity was not there.
     pub base: Option<ContentHash>,
+    /// Our version, or `None` if we deleted the entity.
     pub ours: Option<ContentHash>,
+    /// Their version, or `None` if they deleted the entity.
     pub theirs: Option<ContentHash>,
+    /// The fields that conflict. Empty for a whole-entity conflict.
     pub fields: Vec<FieldConflict>,
 }
 
@@ -161,19 +173,28 @@ pub struct Conflict {
 /// the whole entity, which happens for delete-versus-modify.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FieldConflict {
+    /// The path from the entity root to the conflicting field.
     pub path: Vec<String>,
+    /// The field's value in the common ancestor.
     pub base: Option<UirNode>,
+    /// The field's value on our side.
     pub ours: Option<UirNode>,
+    /// The field's value on their side.
     pub theirs: Option<UirNode>,
 }
 
 /// Any object the store holds.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Object {
+    /// Raw bytes that are not an entity.
     Blob(Vec<u8>),
+    /// An entity's value, as a UIR tree.
     Entity(UirNode),
+    /// A snapshot of entities.
     Tree(Tree),
+    /// A snapshot with its history.
     Commit(Commit),
+    /// An unresolved merge conflict.
     Conflict(Conflict),
 }
 

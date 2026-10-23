@@ -14,19 +14,29 @@ use crate::uir::UirNode;
 /// One entity's change between two snapshots.
 #[derive(Debug, Clone, PartialEq)]
 pub enum DiffEntry {
+    /// The entity exists only in the newer snapshot.
     Added {
+        /// The entity's id.
         id: EntityId,
+        /// The hash of its content in the newer snapshot.
         hash: ContentHash,
     },
+    /// The entity exists only in the older snapshot.
     Removed {
+        /// The entity's id.
         id: EntityId,
+        /// The hash of its content in the older snapshot.
         hash: ContentHash,
     },
     /// The id survived but its content changed. The field-level detail is in `diff`.
     Modified {
+        /// The entity's id.
         id: EntityId,
+        /// The hash of its content in the older snapshot.
         old_hash: ContentHash,
+        /// The hash of its content in the newer snapshot.
         new_hash: ContentHash,
+        /// The changed fields, in path order.
         diff: EntityDiff,
     },
 }
@@ -34,14 +44,18 @@ pub enum DiffEntry {
 /// The field-level changes inside one modified entity.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct EntityDiff {
+    /// One entry per changed field path.
     pub field_changes: Vec<FieldChange>,
 }
 
 /// A change at one field path. `None` on one side means the field was added or removed.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FieldChange {
+    /// The path from the entity root to the field, one name per level.
     pub field_path: Vec<String>,
+    /// The value in the older snapshot, or `None` if the field was absent there.
     pub old_value: Option<UirNode>,
+    /// The value in the newer snapshot, or `None` if the field was removed.
     pub new_value: Option<UirNode>,
 }
 

@@ -18,7 +18,9 @@ use crate::uir::UirNode;
 /// are also listed in `conflicts`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MergeResult {
+    /// The merged snapshot. Conflicted entities point at conflict objects.
     pub merged_tree: ContentHash,
+    /// The conflicts found, one per conflicted entity.
     pub conflicts: Vec<Conflict>,
 }
 

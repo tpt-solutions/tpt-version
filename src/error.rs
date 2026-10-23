@@ -15,7 +15,9 @@ pub enum StoreError {
     NotFound(ContentHash),
     /// Bytes do not hash to the key they were stored or fetched under.
     HashMismatch {
+        /// The hash the bytes were stored or fetched under.
         expected: ContentHash,
+        /// The hash the bytes actually have.
         actual: ContentHash,
     },
     /// The storage backend failed: I/O, network, or a malformed ref file.
@@ -31,7 +33,9 @@ pub enum ObjectError {
     UnknownTag(u8),
     /// The object decoded, but it is not the kind the caller asked for.
     WrongKind {
+        /// The kind the caller asked for.
         expected: &'static str,
+        /// The kind that was actually stored.
         found: &'static str,
     },
     /// A field holds an invalid value, such as a bad flag or hex digit.
@@ -45,11 +49,17 @@ pub enum ObjectError {
 /// A repository operation failed. Merge failures use these variants too.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RepoError {
+    /// A store operation failed.
     Store(StoreError),
+    /// Stored bytes could not be decoded.
     Object(ObjectError),
+    /// The branch name breaks the naming rules.
     InvalidBranchName(String),
+    /// A branch with this name already exists.
     BranchExists(String),
+    /// No branch with this name exists.
     BranchNotFound(String),
+    /// The checked-out branch cannot be deleted.
     CannotDeleteCurrentBranch(String),
     /// The working copy has changes that are not in HEAD.
     DirtyWorkingCopy,
