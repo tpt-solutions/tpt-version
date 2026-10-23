@@ -21,7 +21,7 @@ pub use fs::FileSystemStore;
 #[cfg(feature = "s3")]
 mod s3;
 #[cfg(feature = "s3")]
-pub use s3::{ObjectClient, S3Store};
+pub use s3::{ConditionalClient, ObjectClient, S3Store};
 
 /// A content-addressable object store.
 pub trait CasStore {
@@ -31,16 +31,29 @@ pub trait CasStore {
     /// Returns the bytes stored under `hash`, verified against it.
     fn get(&self, hash: &ContentHash) -> Result<Vec<u8>, StoreError>;
 
-    /// Whether an object is stored under `hash`.
-    fn contains(&self, hash: &ContentHash) -> bool;
+    /// Whether an object is stored under `hash`. A backend failure is an error,
+    /// not `false`, so an unreachable store is never mistaken for a missing object.
+    fn contains(&self, hash: &ContentHash) -> Result<bool, StoreError>;
 }
 
 /// Named branch refs, each pointing at a commit.
 pub trait RefStore {
     /// The hash a ref points at, or `None` if the ref does not exist.
     fn read_ref(&self, name: &str) -> Result<Option<ContentHash>, StoreError>;
-    /// Points a ref at `hash`, creating it if needed.
+    /// Points a ref at `hash`, creating it if needed. This is unconditional:
+    /// use [`RefStore::compare_and_swap_ref`] when another writer might move
+    /// the ref too.
     fn write_ref(&mut self, name: &str, hash: ContentHash) -> Result<(), StoreError>;
+
+    /// Points a ref at `new` only if it currently points at `expected`
+    /// (`None` meaning the ref does not exist). Returns `false`, and changes
+    /// nothing, when the ref has moved.
+    fn compare_and_swap_ref(
+        &mut self,
+        name: &str,
+        expected: Option<ContentHash>,
+        new: ContentHash,
+    ) -> Result<bool, StoreError>;
 
     /// Returns whether a ref was removed.
     fn delete_ref(&mut self, name: &str) -> Result<bool, StoreError>;

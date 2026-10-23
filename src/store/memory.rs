@@ -28,8 +28,8 @@ impl CasStore for MemoryStore {
         Ok(data.clone())
     }
 
-    fn contains(&self, hash: &ContentHash) -> bool {
-        self.objects.contains_key(hash)
+    fn contains(&self, hash: &ContentHash) -> Result<bool, StoreError> {
+        Ok(self.objects.contains_key(hash))
     }
 }
 
@@ -41,6 +41,19 @@ impl RefStore for MemoryStore {
     fn write_ref(&mut self, name: &str, hash: ContentHash) -> Result<(), StoreError> {
         self.refs.insert(name.into(), hash);
         Ok(())
+    }
+
+    fn compare_and_swap_ref(
+        &mut self,
+        name: &str,
+        expected: Option<ContentHash>,
+        new: ContentHash,
+    ) -> Result<bool, StoreError> {
+        if self.refs.get(name).copied() != expected {
+            return Ok(false);
+        }
+        self.refs.insert(name.into(), new);
+        Ok(true)
     }
 
     fn delete_ref(&mut self, name: &str) -> Result<bool, StoreError> {
@@ -62,7 +75,7 @@ mod tests {
         let data = b"hello";
         let hash = ContentHash::of(data);
         store.put(hash, data).unwrap();
-        assert!(store.contains(&hash));
+        assert!(store.contains(&hash).unwrap());
         assert_eq!(store.get(&hash).unwrap(), data);
     }
 
@@ -72,7 +85,7 @@ mod tests {
         let wrong = ContentHash::of(b"other");
         let err = store.put(wrong, b"hello").unwrap_err();
         assert!(matches!(err, StoreError::HashMismatch { .. }));
-        assert!(!store.contains(&wrong));
+        assert!(!store.contains(&wrong).unwrap());
     }
 
     #[test]

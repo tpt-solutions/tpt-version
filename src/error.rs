@@ -10,6 +10,7 @@ use crate::object::{ContentHash, EntityId};
 
 /// A content-addressable or ref store failed.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum StoreError {
     /// No object is stored under this hash.
     NotFound(ContentHash),
@@ -26,6 +27,7 @@ pub enum StoreError {
 
 /// Stored bytes could not be decoded as the object they claim to be.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ObjectError {
     /// The input ended before a field was complete.
     Truncated,
@@ -48,6 +50,7 @@ pub enum ObjectError {
 
 /// A repository operation failed. Merge failures use these variants too.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum RepoError {
     /// A store operation failed.
     Store(StoreError),
@@ -57,6 +60,14 @@ pub enum RepoError {
     InvalidBranchName(String),
     /// A branch with this name already exists.
     BranchExists(String),
+    /// The new branch name collides with an existing one: it differs only in
+    /// case, or one is a path prefix of the other (`a` and `a/b`).
+    BranchNameClash {
+        /// The name that was asked for.
+        name: String,
+        /// The existing branch it clashes with.
+        existing: String,
+    },
     /// No branch with this name exists.
     BranchNotFound(String),
     /// The checked-out branch cannot be deleted.
@@ -71,6 +82,12 @@ pub enum RepoError {
     NoConflict(EntityId),
     /// A commit's signature does not verify against its contents.
     InvalidSignature(ContentHash),
+    /// The branch moved after this repository last read it, so the update was
+    /// refused. Reopen the branch and try again.
+    RefMoved(String),
+    /// The entity's stored form loads back under a different id than the one
+    /// it was staged with.
+    IdMismatch(EntityId),
 }
 
 /// Merge failures are reported as [`RepoError`] variants.
@@ -122,6 +139,12 @@ impl fmt::Display for RepoError {
             Self::Object(error) => write!(f, "{error}"),
             Self::InvalidBranchName(name) => write!(f, "invalid branch name {name:?}"),
             Self::BranchExists(name) => write!(f, "branch {name:?} already exists"),
+            Self::BranchNameClash { name, existing } => {
+                write!(
+                    f,
+                    "branch {name:?} clashes with existing branch {existing:?}"
+                )
+            }
             Self::BranchNotFound(name) => write!(f, "branch {name:?} not found"),
             Self::CannotDeleteCurrentBranch(name) => {
                 write!(f, "cannot delete the checked-out branch {name:?}")
@@ -136,6 +159,8 @@ impl fmt::Display for RepoError {
             Self::ConflictPending(id) => write!(f, "entity {id} has an unresolved conflict"),
             Self::NoConflict(id) => write!(f, "entity {id} has no pending conflict"),
             Self::InvalidSignature(hash) => write!(f, "commit {hash} has an invalid signature"),
+            Self::RefMoved(name) => write!(f, "branch {name:?} moved since it was read"),
+            Self::IdMismatch(id) => write!(f, "entity {id} does not load back under its own id"),
         }
     }
 }
