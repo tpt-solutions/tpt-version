@@ -133,7 +133,7 @@ Plan: see the review notes. Tier 1 and Tier 2 come first.
 - [ ] Live-collaboration op log on top of the DAG.
 
 ### Tier 5: automation and usability
-- [~] `tpt` CLI. `src/bin/tpt.rs` (built with std) covers commit, get, list, log, branch, branches, switch, merge (with a conflict preference), tag, tags, fsck and gc, over a key-value document. Still missing: `init`, `diff`, a `resolve` command, and a `cli` feature gate (it needs std today).
+- [~] `tpt` CLI. `src/bin/tpt.rs`, behind the default `cli` feature, covers init, commit, get, list, log, diff, branch, branches, switch, merge (with an ours or theirs preference for every conflict), tag, tags, fsck and gc, over a key-value document. Still missing: a per-conflict `resolve` command. Merges are one step, so their conflicts cannot be settled across runs yet. Covered by `tests/cli.rs`.
 - [~] CI: `cargo doc -D warnings` is done. Still open: `cargo deny` / audit, MSRV check, coverage, bench regression threshold.
 - [ ] `cargo-fuzz` targets for `Object::decode` and `merge_trees`.
 - [ ] Release automation (`release-plz` / `cargo-release`) and Dependabot for the pinned git revs.

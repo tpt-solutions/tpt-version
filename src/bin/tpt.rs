@@ -25,7 +25,10 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use tpt_version::UirNode;
 use tpt_version::dag;
+use tpt_version::diff::{DiffEntry, diff_commits};
+use tpt_version::export::node_json;
 use tpt_version::maintenance::fsck;
 use tpt_version::object::Object;
 use tpt_version::prelude::*;
@@ -86,6 +89,16 @@ fn run(mut args: Vec<String>) -> Result<ExitCode, Failure> {
         return Ok(usage());
     }
     let command = args.remove(0);
+
+    if command == "init" {
+        if dir.join("HEAD").exists() {
+            return Err(format!("{} is already a tpt store", dir.display()).into());
+        }
+        FileSystemStore::open(&dir)?;
+        fs::write(dir.join("HEAD"), tpt_version::repo::DEFAULT_BRANCH)?;
+        println!("initialised {}", dir.display());
+        return Ok(ExitCode::SUCCESS);
+    }
 
     let store = FileSystemStore::open(&dir)?;
     let branch = fs::read_to_string(dir.join("HEAD"))
@@ -176,6 +189,37 @@ fn run(mut args: Vec<String>) -> Result<ExitCode, Failure> {
                 return Ok(ExitCode::FAILURE);
             }
         }
+        ("diff", [from, to]) => {
+            let (before, after) = (resolve(&repo, from)?, resolve(&repo, to)?);
+            for change in diff_commits(repo.store(), &before, &after)? {
+                match change {
+                    DiffEntry::Added { id, .. } => {
+                        let found: Entry = required(repo.entity_at(&after, &id)?)?;
+                        println!("added {}={}", found.key, found.value);
+                    }
+                    DiffEntry::Removed { id, .. } => {
+                        let found: Entry = required(repo.entity_at(&before, &id)?)?;
+                        println!("removed {}", found.key);
+                    }
+                    DiffEntry::Modified { id, diff, .. } => {
+                        let found: Entry = required(repo.entity_at(&after, &id)?)?;
+                        for field in &diff.field_changes {
+                            let show = |value: &Option<UirNode>| match value {
+                                Some(node) => node_json(node),
+                                None => "null".into(),
+                            };
+                            println!(
+                                "changed {} {}: {} -> {}",
+                                found.key,
+                                field.field_path.join("."),
+                                show(&field.old_value),
+                                show(&field.new_value)
+                            );
+                        }
+                    }
+                }
+            }
+        }
         ("gc", []) => {
             let report = repo.gc()?;
             println!("kept {}, removed {}", report.kept, report.removed);
@@ -183,6 +227,25 @@ fn run(mut args: Vec<String>) -> Result<ExitCode, Failure> {
         _ => return Ok(usage()),
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// Turns a branch name, a tag name or a full commit hash into a commit.
+fn resolve(
+    repo: &Repository<FileSystemStore, SystemClock>,
+    name: &str,
+) -> Result<ContentHash, Failure> {
+    if let Some(commit) = repo.resolve_branch(name)? {
+        return Ok(commit);
+    }
+    if let Some(commit) = repo.resolve_tag(name)? {
+        return Ok(commit);
+    }
+    name.parse()
+        .map_err(|_| format!("{name:?} is not a branch, a tag or a commit").into())
+}
+
+fn required<T>(found: Option<T>) -> Result<T, Failure> {
+    found.ok_or_else(|| "entry is missing from that commit".to_string().into())
 }
 
 fn head_commit(repo: &Repository<FileSystemStore, SystemClock>) -> Result<ContentHash, Failure> {

@@ -12,12 +12,14 @@ categories = ["data-structures", "no-std", "development-tools"]
 publish = false
 
 [features]
-default = ["std", "derive"]
+default = ["std", "derive", "cli"]
 std = ["tpt-crypto-hash/std", "tpt-crypto-sig/std"]
 # #[derive(Entity)]. Needs no std, but pulls in the proc-macro crate at build time.
 derive = ["dep:tpt-version-derive"]
 # S3-backed object store. Needs std, and the caller supplies the network client.
 s3 = ["std"]
+# The tpt command-line tool. Needs std for the file-system store.
+cli = ["std"]
 
 [dependencies]
 tpt-crypto-hash = { git = "https://github.com/tpt-solutions/tpt-crypto", default-features = false, features = ["alloc"] }
@@ -65,4 +67,4 @@ members = ["derive"]
 [[bin]]
 name = "tpt"
 path = "src/bin/tpt.rs"
-required-features = ["std"]
+required-features = ["cli"]
