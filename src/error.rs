@@ -94,6 +94,9 @@ pub enum RepoError {
     TagExists(String),
     /// No tag with this name exists.
     TagNotFound(String),
+    /// The destination's branch has commits the source does not, so updating it
+    /// would lose them. Fetch and merge first, or force-update outside this API.
+    NotFastForward(String),
     /// The operation needs a finished merge, and one is still staged.
     MergeInProgress,
     /// There is no head commit to amend.
@@ -177,6 +180,12 @@ impl fmt::Display for RepoError {
             Self::HookRejected(reason) => write!(f, "commit refused by a hook: {reason}"),
             Self::TagExists(name) => write!(f, "tag {name:?} already exists"),
             Self::TagNotFound(name) => write!(f, "tag {name:?} not found"),
+            Self::NotFastForward(name) => {
+                write!(
+                    f,
+                    "branch {name:?} has commits the other side lacks; not a fast-forward"
+                )
+            }
             Self::MergeInProgress => {
                 write!(
                     f,

@@ -20,6 +20,7 @@ pub mod prelude;
 pub mod repo;
 pub mod sign;
 pub mod store;
+pub mod sync;
 pub mod trust;
 pub mod uir;
 

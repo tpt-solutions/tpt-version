@@ -25,6 +25,8 @@
   `file_store_cli`, `signed_history` and `s3_sync` examples.
 - `prelude` module. The README Quick Start is compiled as a doctest.
 - `docs/`: concepts, conflict cookbook, porting guide and FAQ.
+- `sync::push` and `sync::fetch` copy reachable objects between any two stores,
+  and move the branch only fast-forward.
 - History editing: `amend`, `reset_hard`, `revert` and `cherry_pick`. Revert and
   cherry-pick stage a three-way merge, so clashes surface as conflicts.
 - Tags: `create_tag`, `resolve_tag`, `list_tags`, `delete_tag`, under `tags/`.
