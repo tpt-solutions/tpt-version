@@ -339,6 +339,32 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
     ///   moves no ref. It is reachable only through its hash, so call
     ///   [`Repository::branch`] on the returned hash to keep it.
     pub fn commit(&mut self, message: &str, author: &ActorId) -> Result<ContentHash, RepoError> {
+        let parents = self
+            .head
+            .into_iter()
+            .chain(self.merge_parents.iter().copied())
+            .collect();
+        self.commit_with_parents(message, author, parents)
+    }
+
+    /// Replaces the head commit with one that records the working copy, keeping
+    /// the head's parents. The old head stays in the store until [`Repository::gc`]
+    /// removes it. Refused while a merge is staged.
+    pub fn amend(&mut self, message: &str, author: &ActorId) -> Result<ContentHash, RepoError> {
+        if !self.merge_parents.is_empty() {
+            return Err(RepoError::MergeInProgress);
+        }
+        let head = self.head.ok_or(RepoError::NothingToAmend)?;
+        let parents = dag::load_commit(&self.store, &head)?.parents;
+        self.commit_with_parents(message, author, parents)
+    }
+
+    fn commit_with_parents(
+        &mut self,
+        message: &str,
+        author: &ActorId,
+        parents: Vec<ContentHash>,
+    ) -> Result<ContentHash, RepoError> {
         if !self.conflicts.is_empty() {
             return Err(RepoError::UnresolvedConflicts(self.conflicts.len()));
         }
@@ -356,9 +382,6 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
                 entries: self.staged.clone(),
             }),
         )?;
-        let mut parents: Vec<ContentHash> = self.head.into_iter().collect();
-        parents.append(&mut self.merge_parents);
-
         let mut commit = Commit {
             tree_hash,
             parents,
@@ -386,6 +409,7 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
             self.advance_branch(&name, self.head, hash)?;
         }
         self.head = Some(hash);
+        self.merge_parents.clear();
         Ok(hash)
     }
 
@@ -473,6 +497,62 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
         } else {
             Err(RepoError::BranchNotFound(name.into()))
         }
+    }
+
+    /// Moves the current branch and the working copy to `commit`, discarding
+    /// staged changes, pending conflicts and a pending merge. Detached, it moves
+    /// only the working copy.
+    pub fn reset_hard(&mut self, commit: ContentHash) -> Result<(), RepoError> {
+        dag::load_commit(&self.store, &commit)?;
+        self.move_to(commit)?;
+        self.conflicts.clear();
+        Ok(())
+    }
+
+    /// Stages the inverse of `commit`'s change on top of the head, as a
+    /// three-way merge. The result is staged for review, like a merge: commit it
+    /// once any conflicts are resolved.
+    pub fn revert(&mut self, commit: ContentHash) -> Result<MergeResult, RepoError> {
+        let (parent_tree, change) = self.change_of(&commit)?;
+        // Undo the change: the base is the commit's own tree, theirs the parent's.
+        self.apply_change(change, parent_tree)
+    }
+
+    /// Stages `commit`'s change on top of the head, as a three-way merge. The
+    /// result is staged for review, like a merge: commit it once any conflicts
+    /// are resolved.
+    pub fn cherry_pick(&mut self, commit: ContentHash) -> Result<MergeResult, RepoError> {
+        let (parent_tree, change) = self.change_of(&commit)?;
+        self.apply_change(parent_tree, change)
+    }
+
+    /// The tree of `commit`'s first parent (empty for a root commit), and the
+    /// tree of `commit` itself.
+    fn change_of(&mut self, commit: &ContentHash) -> Result<(ContentHash, ContentHash), RepoError> {
+        let loaded = dag::load_commit(&self.store, commit)?;
+        let parent_tree = match loaded.parents.first() {
+            Some(parent) => dag::commit_tree(&self.store, parent)?,
+            None => store_object(&mut self.store, &Object::Tree(Tree::default()))?,
+        };
+        Ok((parent_tree, loaded.tree_hash))
+    }
+
+    /// Three-way merges `theirs` into the working copy, with `base` as the common
+    /// ancestor, and stages the result.
+    fn apply_change(
+        &mut self,
+        base: ContentHash,
+        theirs: ContentHash,
+    ) -> Result<MergeResult, RepoError> {
+        self.ensure_clean()?;
+        let ours = match self.head {
+            Some(head) => dag::commit_tree(&self.store, &head)?,
+            None => store_object(&mut self.store, &Object::Tree(Tree::default()))?,
+        };
+        let result = merge::merge_trees(&mut self.store, base, ours, theirs)?;
+        self.staged = load_tree(&self.store, &result.merged_tree)?.entries;
+        self.conflicts = result.conflicts.clone();
+        Ok(result)
     }
 
     /// Moves the working copy to a commit, detached from any branch.

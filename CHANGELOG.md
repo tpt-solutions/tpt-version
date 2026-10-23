@@ -25,6 +25,8 @@
   `file_store_cli`, `signed_history` and `s3_sync` examples.
 - `prelude` module. The README Quick Start is compiled as a doctest.
 - `docs/`: concepts, conflict cookbook, porting guide and FAQ.
+- History editing: `amend`, `reset_hard`, `revert` and `cherry_pick`. Revert and
+  cherry-pick stage a three-way merge, so clashes surface as conflicts.
 - Tags: `create_tag`, `resolve_tag`, `list_tags`, `delete_tag`, under `tags/`.
   Branch names may not start with `tags/`. `Repository::status`.
 - `Repository::entity_history` and `Repository::field_blame`, which follow the

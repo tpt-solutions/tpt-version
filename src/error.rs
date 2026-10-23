@@ -94,6 +94,10 @@ pub enum RepoError {
     TagExists(String),
     /// No tag with this name exists.
     TagNotFound(String),
+    /// The operation needs a finished merge, and one is still staged.
+    MergeInProgress,
+    /// There is no head commit to amend.
+    NothingToAmend,
     /// The branch is governed by a trust policy, and a commit that would land on
     /// it, or be merged into it, is not signed by a trusted key.
     Untrusted(String),
@@ -173,6 +177,13 @@ impl fmt::Display for RepoError {
             Self::HookRejected(reason) => write!(f, "commit refused by a hook: {reason}"),
             Self::TagExists(name) => write!(f, "tag {name:?} already exists"),
             Self::TagNotFound(name) => write!(f, "tag {name:?} not found"),
+            Self::MergeInProgress => {
+                write!(
+                    f,
+                    "a merge is staged; commit it, or discard it with reset_hard"
+                )
+            }
+            Self::NothingToAmend => write!(f, "there is no commit to amend"),
             Self::Untrusted(branch) => {
                 write!(
                     f,
