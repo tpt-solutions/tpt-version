@@ -133,7 +133,10 @@ pub struct Commit {
     pub tree_hash: ContentHash,
     /// The commits this one follows. Two for a merge commit, none for a root.
     pub parents: Vec<ContentHash>,
-    /// Who made the commit.
+    /// Who made the commit, as the caller names them. This is a label, not a
+    /// proof of identity: nothing checks it against the signer. The signature
+    /// (see [`Commit::signature`]) is what ties a commit to a key, and the author
+    /// may differ from the signer, for example when a service signs for a user.
     pub author: ActorId,
     /// When the commit was made, from the repository's clock.
     pub timestamp: u64,

@@ -1,5 +1,6 @@
 //! Wall-clock throughput for the TODO's benchmark targets: committing 10,000
-//! entities, diffing two large trees, and merging two divergent branches.
+//! entities, diffing two large trees, merging two divergent branches, and
+//! finding the merge base of two long histories.
 //!
 //! Run with `cargo bench --bench throughput`. Timings are single runs on the
 //! current machine, not statistical benchmarks.
@@ -107,5 +108,52 @@ fn main() -> Result<(), RepoError> {
         "disjoint edits must not conflict"
     );
     repo.commit("merge right", &author)?;
+    deep_history(&author)
+}
+
+/// Two branches with long histories of their own, forked from a 2,000-commit
+/// trunk. The merge has to find the fork point through all of that history.
+fn deep_history(author: &ActorId) -> Result<(), RepoError> {
+    const TRUNK: u32 = 2_000;
+    const SIDE: u32 = 1_000;
+
+    let mut repo = Repository::open(
+        MemoryStore::default(),
+        LogicalClock::starting_at(1),
+        "trunk",
+    )?;
+    let mut fork = None;
+    for step in 0..TRUNK {
+        repo.put_entity(&Cell {
+            id: step % 16,
+            value: i64::from(step),
+        })?;
+        let commit = repo.commit("trunk", author)?;
+        if step == TRUNK / 2 {
+            fork = Some(commit);
+        }
+    }
+    repo.branch("side", fork.expect("fork point is set"))?;
+    repo.switch_branch("side")?;
+    for step in 0..SIDE {
+        // Ids 100 and up, so the side branch never edits what the trunk edits.
+        repo.put_entity(&Cell {
+            id: 100 + step % 16,
+            value: i64::from(step),
+        })?;
+        repo.commit("side", author)?;
+    }
+
+    let started = Instant::now();
+    let merged = repo.merge("trunk")?;
+    report(
+        "merge 2,000- and 1,000-commit histories",
+        started.elapsed(),
+        (TRUNK + SIDE) as usize,
+    );
+    assert!(
+        merged.conflicts.is_empty(),
+        "disjoint edits must not conflict"
+    );
     Ok(())
 }

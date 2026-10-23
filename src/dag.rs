@@ -32,9 +32,33 @@ pub(crate) fn commit_tree<S: CasStore>(
     Ok(load_commit(store, hash)?.tree_hash)
 }
 
+/// Commits loaded during one query, so each is read and verified at most once.
+#[derive(Default)]
+struct CommitCache {
+    commits: BTreeMap<ContentHash, Commit>,
+}
+
+impl CommitCache {
+    fn get<S: CasStore>(&mut self, store: &S, hash: &ContentHash) -> Result<&Commit, RepoError> {
+        if !self.commits.contains_key(hash) {
+            let commit = load_commit(store, hash)?;
+            self.commits.insert(*hash, commit);
+        }
+        Ok(&self.commits[hash])
+    }
+}
+
 /// Every commit reachable from `starts`, breadth first, each listed once.
 pub fn ancestors<S: CasStore>(
     store: &S,
+    starts: &[ContentHash],
+) -> Result<Vec<ContentHash>, RepoError> {
+    ancestors_cached(store, &mut CommitCache::default(), starts)
+}
+
+fn ancestors_cached<S: CasStore>(
+    store: &S,
+    cache: &mut CommitCache,
     starts: &[ContentHash],
 ) -> Result<Vec<ContentHash>, RepoError> {
     let mut seen = BTreeSet::new();
@@ -46,7 +70,7 @@ pub fn ancestors<S: CasStore>(
     }
     let mut order = Vec::new();
     while let Some(hash) = queue.pop_front() {
-        for parent in load_commit(store, &hash)?.parents {
+        for parent in cache.get(store, &hash)?.parents.clone() {
             if seen.insert(parent) {
                 queue.push_back(parent);
             }
@@ -74,9 +98,10 @@ pub fn descendants<S: CasStore>(
     root: &ContentHash,
     heads: &[ContentHash],
 ) -> Result<Vec<ContentHash>, RepoError> {
+    let mut cache = CommitCache::default();
     let mut children: BTreeMap<ContentHash, Vec<ContentHash>> = BTreeMap::new();
-    for hash in ancestors(store, heads)? {
-        for parent in load_commit(store, &hash)?.parents {
+    for hash in ancestors_cached(store, &mut cache, heads)? {
+        for parent in cache.get(store, &hash)?.parents.clone() {
             children.entry(parent).or_default().push(hash);
         }
     }
@@ -98,32 +123,49 @@ pub fn descendants<S: CasStore>(
 ///
 /// With several best bases (a criss-cross history), the newest by timestamp
 /// wins, ties broken by hash. Every peer therefore picks the same base.
+///
+/// The walk loads each reachable commit once, so the cost is linear in the
+/// size of the two histories.
 pub fn find_merge_base<S: CasStore>(
     store: &S,
     a: &ContentHash,
     b: &ContentHash,
 ) -> Result<Option<ContentHash>, RepoError> {
-    let from_a: BTreeSet<ContentHash> = ancestors(store, core::slice::from_ref(a))?
-        .into_iter()
-        .collect();
-    let from_b: BTreeSet<ContentHash> = ancestors(store, core::slice::from_ref(b))?
-        .into_iter()
-        .collect();
+    let mut cache = CommitCache::default();
+    let from_a: BTreeSet<ContentHash> =
+        ancestors_cached(store, &mut cache, core::slice::from_ref(a))?
+            .into_iter()
+            .collect();
+    let from_b: BTreeSet<ContentHash> =
+        ancestors_cached(store, &mut cache, core::slice::from_ref(b))?
+            .into_iter()
+            .collect();
     let common: Vec<ContentHash> = from_a.intersection(&from_b).copied().collect();
 
-    // A common ancestor that another common ancestor descends from is superseded.
+    // A common ancestor is superseded when it is a strict ancestor of another
+    // common ancestor. The strict ancestors of all of them are exactly the
+    // commits reachable from their parents, so one walk finds every superseded
+    // commit at once.
     let mut superseded = BTreeSet::new();
+    let mut queue = VecDeque::new();
     for hash in &common {
-        superseded.extend(
-            ancestors(store, core::slice::from_ref(hash))?
-                .into_iter()
-                .skip(1),
-        );
+        for parent in cache.get(store, hash)?.parents.clone() {
+            if superseded.insert(parent) {
+                queue.push_back(parent);
+            }
+        }
+    }
+    while let Some(hash) = queue.pop_front() {
+        for parent in cache.get(store, &hash)?.parents.clone() {
+            if superseded.insert(parent) {
+                queue.push_back(parent);
+            }
+        }
     }
 
     let mut best: Option<(u64, ContentHash)> = None;
     for hash in common.into_iter().filter(|hash| !superseded.contains(hash)) {
-        let timestamp = load_commit(store, &hash)?.timestamp;
+        let timestamp = cache.get(store, &hash)?.timestamp;
         if best.is_none_or(|current| (timestamp, hash) > current) {
             best = Some((timestamp, hash));
         }
