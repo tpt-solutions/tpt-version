@@ -50,6 +50,16 @@ pub enum FieldStrategy {
     /// Merges text line by line, as a three-way merge. Edits to different lines
     /// combine. Edits to the same or adjacent lines conflict. Text fields only.
     TextLines,
+    /// Takes the value from the side whose commit is newer. Only applies when the
+    /// merge knows which side that is, which `Repository` does for branch merges.
+    LastWriterWins,
+}
+
+/// Which side of a merge a value came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Side {
+    Ours,
+    Theirs,
 }
 
 /// Per-field merge strategies, keyed by field path. A strategy applies only
@@ -60,6 +70,7 @@ pub enum FieldStrategy {
 pub struct MergePolicy {
     strategies: BTreeMap<Vec<String>, FieldStrategy>,
     lists: BTreeMap<Vec<String>, ListStrategy>,
+    newer: Option<Side>,
 }
 
 /// How a list field whose two sides both changed is combined. Without one, the
@@ -89,6 +100,13 @@ impl MergePolicy {
     pub fn list(mut self, path: &[&str], strategy: ListStrategy) -> Self {
         let path = path.iter().map(|part| String::from(*part)).collect();
         self.lists.insert(path, strategy);
+        self
+    }
+
+    /// The side whose commit is newer, for `LastWriterWins`. Set by the
+    /// repository for each merge. Left unset, a `LastWriterWins` field conflicts.
+    pub(crate) fn with_newer_side(mut self, newer: Option<Side>) -> Self {
+        self.newer = newer;
         self
     }
 
@@ -137,7 +155,7 @@ fn combine(
                     .checked_add(theirs.checked_sub(base)?)?,
                 FieldStrategy::Max => ours.max(theirs),
                 FieldStrategy::Min => ours.min(theirs),
-                FieldStrategy::TextLines => return None,
+                FieldStrategy::TextLines | FieldStrategy::LastWriterWins => return None,
             };
             Some(UirNode::from(merged))
         }
@@ -155,7 +173,7 @@ fn combine(
                 FieldStrategy::Sum => base + (ours - base) + (theirs - base),
                 FieldStrategy::Max => ours.max(theirs),
                 FieldStrategy::Min => ours.min(theirs),
-                FieldStrategy::TextLines => return None,
+                FieldStrategy::TextLines | FieldStrategy::LastWriterWins => return None,
             };
             Some(UirNode::from(merged))
         }
@@ -306,6 +324,13 @@ fn merge_node(
     }
     if base == theirs {
         return ours.cloned();
+    }
+    if policy.strategy_at(path.as_slice()) == Some(FieldStrategy::LastWriterWins) {
+        match policy.newer {
+            Some(Side::Ours) => return ours.cloned(),
+            Some(Side::Theirs) => return theirs.cloned(),
+            None => {}
+        }
     }
     if let (Some(strategy), Some(our_value), Some(their_value)) =
         (policy.strategy_at(path.as_slice()), ours, theirs)

@@ -14,7 +14,7 @@ use crate::entity::Entity;
 use crate::error::RepoError;
 use crate::history::{self, EntityVersion, FieldBlame};
 use crate::maintenance::{self, GcReport};
-use crate::merge::{self, MergePolicy, MergeResult, Resolution};
+use crate::merge::{self, MergePolicy, MergeResult, Resolution, Side};
 use crate::object::{ActorId, Commit, Conflict, ContentHash, EntityId, Object, Tree};
 use crate::sign::{Signature, Signer};
 use crate::store::{CasStore, PruneStore, RefStore, load_entity, load_tree, store_object};
@@ -581,6 +581,24 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
         Ok((parent_tree, loaded.tree_hash))
     }
 
+    /// The merge policy for merging commit `theirs` into commit `ours`. It names
+    /// the newer side for `LastWriterWins`. Commits are ordered by timestamp, then
+    /// by hash, so every machine picks the same side.
+    fn policy_between(
+        &self,
+        ours: &ContentHash,
+        theirs: &ContentHash,
+    ) -> Result<MergePolicy, RepoError> {
+        let ours_key = (dag::load_commit(&self.store, ours)?.timestamp, *ours);
+        let theirs_key = (dag::load_commit(&self.store, theirs)?.timestamp, *theirs);
+        let newer = match ours_key.cmp(&theirs_key) {
+            core::cmp::Ordering::Less => Some(Side::Theirs),
+            core::cmp::Ordering::Greater => Some(Side::Ours),
+            core::cmp::Ordering::Equal => None,
+        };
+        Ok(self.merge_policy.clone().with_newer_side(newer))
+    }
+
     /// The tree to merge from when `a` and `b` meet. With several best common
     /// ancestors (a criss-cross history) they are first merged into a virtual
     /// base, so that no single arbitrary ancestor decides the answer.
@@ -608,10 +626,10 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
     /// so the virtual base is always complete.
     fn merge_virtual(&mut self, a: ContentHash, b: ContentHash) -> Result<ContentHash, RepoError> {
         let base = self.merge_base_tree(&a, &b)?;
+        let policy = self.policy_between(&a, &b)?;
         let a_tree = dag::commit_tree(&self.store, &a)?;
         let b_tree = dag::commit_tree(&self.store, &b)?;
-        let result =
-            merge::merge_trees_with(&mut self.store, base, a_tree, b_tree, &self.merge_policy)?;
+        let result = merge::merge_trees_with(&mut self.store, base, a_tree, b_tree, &policy)?;
         let mut entries = load_tree(&self.store, &result.merged_tree)?.entries;
         for conflict in result.conflicts {
             match conflict.ours {
@@ -727,14 +745,10 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
             });
         }
 
+        let policy = self.policy_between(&ours, &theirs)?;
         let base_tree = self.merge_base_tree(&ours, &theirs)?;
-        let result = merge::merge_trees_with(
-            &mut self.store,
-            base_tree,
-            ours_tree,
-            theirs_tree,
-            &self.merge_policy,
-        )?;
+        let result =
+            merge::merge_trees_with(&mut self.store, base_tree, ours_tree, theirs_tree, &policy)?;
         self.staged = load_tree(&self.store, &result.merged_tree)?.entries;
         self.merge_parents = vec![theirs];
         self.conflicts = result.conflicts.clone();

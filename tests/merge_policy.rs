@@ -202,3 +202,57 @@ fn text_without_a_text_strategy_still_conflicts() {
     let mut repo = note_branches(MergePolicy::new());
     assert_eq!(repo.merge("side").unwrap().conflicts.len(), 1);
 }
+
+/// Both sides change the body. `main_first` decides which commit is older.
+fn lww_branches(policy: MergePolicy, main_first: bool) -> Repository<MemoryStore, LogicalClock> {
+    let mut repo = Repository::open(MemoryStore::default(), LogicalClock::starting_at(1), "main")
+        .unwrap()
+        .with_merge_policy(policy);
+    let note = |body: &str| Note {
+        id: EntityId::from_bytes([6; 16]),
+        body: body.into(),
+    };
+    repo.put_entity(&note("base")).unwrap();
+    let base = repo.commit("base", &author()).unwrap();
+    repo.branch("side", base).unwrap();
+
+    let main_edit = |repo: &mut Repository<MemoryStore, LogicalClock>| {
+        repo.switch_branch("main").unwrap();
+        repo.put_entity(&note("from main")).unwrap();
+        repo.commit("main edit", &author()).unwrap();
+    };
+    let side_edit = |repo: &mut Repository<MemoryStore, LogicalClock>| {
+        repo.switch_branch("side").unwrap();
+        repo.put_entity(&note("from side")).unwrap();
+        repo.commit("side edit", &author()).unwrap();
+    };
+    if main_first {
+        main_edit(&mut repo);
+        side_edit(&mut repo);
+    } else {
+        side_edit(&mut repo);
+        main_edit(&mut repo);
+    }
+    repo.switch_branch("main").unwrap();
+    repo
+}
+
+#[test]
+fn last_writer_wins_takes_the_newer_commit() {
+    let policy = MergePolicy::new().field(&["body"], FieldStrategy::LastWriterWins);
+    let key = EntityId::from_bytes([6; 16]);
+
+    // Main commits first, so the side's commit is the newer one.
+    let mut side_newer = lww_branches(policy.clone(), true);
+    assert!(side_newer.merge("side").unwrap().conflicts.is_empty());
+    side_newer.commit("merge", &author()).unwrap();
+    let kept: Note = side_newer.entity(&key).unwrap().unwrap();
+    assert_eq!(kept.body, "from side");
+
+    // The side commits first, so main's commit is the newer one.
+    let mut main_newer = lww_branches(policy, false);
+    assert!(main_newer.merge("side").unwrap().conflicts.is_empty());
+    main_newer.commit("merge", &author()).unwrap();
+    let kept: Note = main_newer.entity(&key).unwrap().unwrap();
+    assert_eq!(kept.body, "from main");
+}
