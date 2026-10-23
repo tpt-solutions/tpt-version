@@ -124,7 +124,7 @@ Plan: see the review notes. Tier 1 and Tier 2 come first.
 - [ ] Hierarchical trees for large models; packfiles / delta compression for the FS store.
 
 ### Tier 4: innovative
-- [ ] Sequence-aware list merge with per-field list policy (`Atomic`, `Set`, `Ordered`).
+- [~] Sequence-aware list merge with per-field list policy (`Atomic`, `Set`, `Ordered`). `ListStrategy::Ordered` is done: a three-way merge over items, so edits at different positions combine, and overlapping edits conflict. It shares the hunk code with text (`text_merge::merge_sequence`). Covered by `tests/merge_policy.rs`. `Atomic` (the default) and `Set` (`Union`) are already there. Moves are not detected: a moved item shows as a removal and an addition.
 - [~] Per-field merge strategies. `MergePolicy` on the repository (`with_merge_policy`) gives numeric fields `Sum`, `Max` or `Min`, text fields `TextLines`, lists `ListStrategy::Union`, and any field `LastWriterWins` (the newer commit by timestamp, then hash, wins). Still open: the strategies are not declared on `Entity`, and LWW does not apply to the virtual-base and cherry-pick paths, which have no commit order.
 - [ ] Post-merge semantic validators (constraints, formula references).
 - [~] Time-travel queries: `entity_at` (by commit), `commit_as_of` and `entity_as_of` (by timestamp) are done. Diff-of-diffs for merge review is not.

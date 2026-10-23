@@ -34,6 +34,7 @@
 - `MergePolicy` and `FieldStrategy` (`Sum`, `Max`, `Min`): numeric fields changed
   on both sides merge by strategy instead of conflicting. `ListStrategy::Union`
   treats a list as a set, and a removal on either side wins.
+- `ListStrategy::Ordered`: a sequence-aware three-way merge over list items.
 - Criss-cross merges use a virtual base built from every best common ancestor
   (`dag::merge_bases`), instead of one arbitrary base.
 - `wasm/`: a wasm-bindgen crate and a static demo page (not yet run in a browser).

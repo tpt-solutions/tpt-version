@@ -12,7 +12,7 @@ use alloc::vec::Vec;
 use crate::error::RepoError;
 use crate::object::{Conflict, ContentHash, EntityId, FieldConflict, Object, Tree};
 use crate::store::{CasStore, load_entity, load_tree, store_object};
-use crate::text_merge::merge_lines;
+use crate::text_merge::{merge_lines, merge_sequence};
 use crate::uir::{Scalar, UirNode};
 
 /// The outcome of a merge. `merged_tree` may reference conflict objects, which
@@ -81,6 +81,11 @@ pub enum ListStrategy {
     /// that was in the base is dropped if either side removed it. Items keep
     /// the order of ours, then theirs, without duplicates.
     Union,
+    /// Merges the list as a sequence, with a three-way merge over its items.
+    /// Edits to different positions combine, and an item moved or inserted by one
+    /// side does not disturb an edit on the other. Edits to the same or adjacent
+    /// items conflict, unless both sides made the identical change.
+    Ordered,
 }
 
 impl MergePolicy {
@@ -351,6 +356,23 @@ fn merge_node(
         };
         if let Some(base_items) = base_items {
             return Some(UirNode::List(union(base_items, our_items, their_items)));
+        }
+    }
+    if let (
+        Some(ListStrategy::Ordered),
+        Some(UirNode::List(our_items)),
+        Some(UirNode::List(their_items)),
+    ) = (policy.list_strategy_at(path.as_slice()), ours, theirs)
+    {
+        let base_items: Option<&[UirNode]> = match base {
+            None => Some(&[]),
+            Some(UirNode::List(items)) => Some(items),
+            Some(_) => None,
+        };
+        if let Some(merged) =
+            base_items.and_then(|base_items| merge_sequence(base_items, our_items, their_items))
+        {
+            return Some(UirNode::List(merged));
         }
     }
     if let (Some(UirNode::Map(our_map)), Some(UirNode::Map(their_map))) = (ours, theirs) {

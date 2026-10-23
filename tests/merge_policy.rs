@@ -256,3 +256,50 @@ fn last_writer_wins_takes_the_newer_commit() {
     let kept: Note = main_newer.entity(&key).unwrap().unwrap();
     assert_eq!(kept.body, "from main");
 }
+
+/// Branches that edit a tag list from `base`: main becomes `main_tags` and the
+/// side becomes `side_tags`.
+fn seq_branches(
+    policy: MergePolicy,
+    base: &[&str],
+    main_tags: &[&str],
+    side_tags: &[&str],
+) -> Repository<MemoryStore, LogicalClock> {
+    let mut repo = Repository::open(MemoryStore::default(), LogicalClock::starting_at(1), "main")
+        .unwrap()
+        .with_merge_policy(policy);
+    repo.put_entity(&tagged(base)).unwrap();
+    let fork = repo.commit("base", &author()).unwrap();
+    repo.branch("side", fork).unwrap();
+
+    repo.put_entity(&tagged(main_tags)).unwrap();
+    repo.commit("main tags", &author()).unwrap();
+    repo.switch_branch("side").unwrap();
+    repo.put_entity(&tagged(side_tags)).unwrap();
+    repo.commit("side tags", &author()).unwrap();
+    repo.switch_branch("main").unwrap();
+    repo
+}
+
+#[test]
+fn ordered_applies_a_removal_and_a_distant_addition() {
+    let policy = MergePolicy::new().list(&["tags"], ListStrategy::Ordered);
+    let mut repo = seq_branches(policy, &["a", "b", "c"], &["b", "c"], &["a", "b", "c", "d"]);
+    let result = repo.merge("side").unwrap();
+    assert!(result.conflicts.is_empty());
+    repo.commit("merge side", &author()).unwrap();
+    let merged: Tagged = repo
+        .entity(&EntityId::from_bytes([2; 16]))
+        .unwrap()
+        .unwrap();
+    assert_eq!(merged.tags, ["b", "c", "d"]);
+}
+
+#[test]
+fn ordered_still_conflicts_on_two_insertions_at_one_position() {
+    let policy = MergePolicy::new().list(&["tags"], ListStrategy::Ordered);
+    let mut repo = seq_branches(policy, &["a", "b"], &["a", "b", "c"], &["a", "b", "d"]);
+    let result = repo.merge("side").unwrap();
+    assert_eq!(result.conflicts.len(), 1);
+    assert_eq!(result.conflicts[0].fields[0].path, ["tags"]);
+}
