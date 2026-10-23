@@ -127,9 +127,9 @@ Plan: see the review notes. Tier 1 and Tier 2 come first.
 - [ ] Sequence-aware list merge with per-field list policy (`Atomic`, `Set`, `Ordered`).
 - [ ] Per-field merge strategies (counter sum, max, last-writer-wins, text three-way) declared on `Entity`.
 - [ ] Post-merge semantic validators (constraints, formula references).
-- [ ] Time-travel queries (`entity_at`, `as_of`) and diff-of-diffs for merge review.
+- [~] Time-travel queries (`entity_at`) are done. `as_of` (a query by time) and diff-of-diffs for merge review are not.
 - [ ] Signed review / approval objects stored in the CAS.
-- [ ] `serde` / JSON / HTML diff output for a web viewer.
+- [~] JSON diff output (`export::diff_to_json`, and `node_json` for values), written by hand with no serde dependency. HTML output is not done.
 - [ ] Live-collaboration op log on top of the DAG.
 
 ### Tier 5: automation and usability

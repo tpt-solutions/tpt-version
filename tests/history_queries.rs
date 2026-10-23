@@ -79,3 +79,18 @@ fn removal_ends_the_history_and_leaves_no_blame() {
     );
     assert!(repo.field_blame(&id(1)).unwrap().is_empty());
 }
+
+#[test]
+fn entity_at_reads_a_past_commit_not_the_working_copy() {
+    let mut repo = new_repo();
+    repo.put_entity(&vertex(1, [0.0; 3])).unwrap();
+    let before = repo.commit("before", &author()).unwrap();
+    repo.put_entity(&vertex(1, [7.0; 3])).unwrap();
+    repo.commit("after", &author()).unwrap();
+    repo.put_entity(&vertex(1, [9.0; 3])).unwrap();
+
+    let then: common::Vertex = repo.entity_at(&before, &id(1)).unwrap().unwrap();
+    assert_eq!(then.position, [0.0; 3]);
+    let missing: Option<common::Vertex> = repo.entity_at(&before, &id(5)).unwrap();
+    assert!(missing.is_none());
+}

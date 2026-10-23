@@ -12,6 +12,7 @@ pub mod dag;
 pub mod diff;
 pub mod entity;
 pub mod error;
+pub mod export;
 pub mod history;
 pub mod maintenance;
 pub mod merge;

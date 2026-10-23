@@ -330,6 +330,20 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
         Ok(Some(E::from_uir(&node)?))
     }
 
+    /// The entity as it was in `commit`, read from that commit's snapshot. The
+    /// working copy is not consulted.
+    pub fn entity_at<E: Entity>(
+        &self,
+        commit: &ContentHash,
+        id: &EntityId,
+    ) -> Result<Option<E>, RepoError> {
+        let tree = load_tree(&self.store, &dag::commit_tree(&self.store, commit)?)?;
+        match tree.entries.get(id) {
+            Some(hash) => Ok(Some(E::from_uir(&load_entity(&self.store, hash)?)?)),
+            None => Ok(None),
+        }
+    }
+
     /// Snapshots the working copy into a commit and advances the current branch.
     ///
     /// Two cases are allowed on purpose:
