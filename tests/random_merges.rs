@@ -9,7 +9,7 @@ mod common;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use common::{id, put};
+use common::{Rng, id, put};
 use tpt_version::merge::merge_trees;
 use tpt_version::object::Object;
 use tpt_version::store::CasStore;
@@ -21,22 +21,6 @@ type Model = BTreeMap<u8, Fields>;
 const ENTITIES: u8 = 6;
 const FIELDS: [&str; 3] = ["x", "y", "z"];
 const SEEDS: u64 = 400;
-
-/// A small xorshift generator, so runs are reproducible without a dependency.
-struct Rng(u64);
-
-impl Rng {
-    fn next(&mut self) -> u64 {
-        self.0 ^= self.0 << 13;
-        self.0 ^= self.0 >> 7;
-        self.0 ^= self.0 << 17;
-        self.0
-    }
-
-    fn below(&mut self, bound: u64) -> u64 {
-        self.next() % bound
-    }
-}
 
 fn random_base(rng: &mut Rng) -> Model {
     let mut model = Model::new();

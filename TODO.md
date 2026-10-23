@@ -79,7 +79,7 @@ Source of truth: [spec.txt](spec.txt). Tick items as they are completed.
 
 ## Testing & Quality (spec section 6)
 - [~] Golden tests: fixed entity → fixed hash. One pinned hash is in `tests/objects.rs`, and it is checked against a SHA-256 known-answer vector. It has not been run on macOS or Windows yet (CI matrix pending). This uses a plain test, not `tpt-testkit::golden`.
-- [~] Property tests: random three-way merges checked against an independent oracle (`tests/random_merges.rs`). This is a custom xorshift generator, not `tpt-testkit::property`. It covers tree-level merges only, not random commit histories through `Repository`.
+- [x] Property tests: random three-way merges checked against an independent oracle (`tests/random_merges.rs`). Random commit histories through `Repository` (branch, commit, merge, resolve, then commit) are checked in `tests/random_histories.rs`. Both use a custom xorshift generator (`tests/common`), not `tpt-testkit::property`.
 - [x] Diff accuracy tests against known tree pairs
 - [~] Benchmarks: `benches/throughput.rs` (`cargo bench --bench throughput`, plain timers, no harness). Single run on this machine: commit 10,000 entities 22.8 ms; diff two 10,000-entity trees 28.8 ms; merge two divergent branches 33.6 ms. Not statistical, and not run in CI. Criterion or tpt-testkit::bench would give proper numbers.
 - [x] `no_std` build check on a WASM target (also checked on `thumbv7em-none-eabihf`)

@@ -83,6 +83,22 @@ pub fn new_repo() -> Repository<MemoryStore, LogicalClock> {
     Repository::open(MemoryStore::default(), LogicalClock::starting_at(1), "main").unwrap()
 }
 
+/// A small xorshift generator, so runs are reproducible without a dependency.
+pub struct Rng(pub u64);
+
+impl Rng {
+    pub fn next(&mut self) -> u64 {
+        self.0 ^= self.0 << 13;
+        self.0 ^= self.0 >> 7;
+        self.0 ^= self.0 << 17;
+        self.0
+    }
+
+    pub fn below(&mut self, bound: u64) -> u64 {
+        self.next() % bound
+    }
+}
+
 /// Stores an object directly and returns its hash.
 pub fn put(store: &mut MemoryStore, object: &Object) -> ContentHash {
     let data = object.encode();
