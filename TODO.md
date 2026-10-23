@@ -135,7 +135,7 @@ Plan: see the review notes. Tier 1 and Tier 2 come first.
 ### Tier 5: automation and usability
 - [~] `tpt` CLI. `src/bin/tpt.rs`, behind the default `cli` feature, covers init, commit, get, list, log, diff, branch, branches, switch, merge (with an ours or theirs preference for every conflict), tag, tags, fsck and gc, over a key-value document. Still missing: a per-conflict `resolve` command. Merges are one step, so their conflicts cannot be settled across runs yet. Covered by `tests/cli.rs`.
 - [~] CI: `cargo doc -D warnings` is done. Still open: `cargo deny` / audit, MSRV check, coverage, bench regression threshold.
-- [ ] `cargo-fuzz` targets for `Object::decode` and `merge_trees`.
+- [~] `cargo-fuzz` targets for `Object::decode` and `merge_trees`. Not set up: cargo-fuzz does not run on this machine. Proptest properties in `tests/decode_robustness.rs` cover `Object::decode` instead: no panics on random bytes, and corrupted objects are refused or re-encode exactly. They found that map keys and tree ids could be out of order, which gave one object two encodings. Decoding now refuses that.
 - [ ] Release automation (`release-plz` / `cargo-release`) and Dependabot for the pinned git revs.
 - [~] Error messages that suggest the next action; `#[non_exhaustive]` on error enums is done.
 - [x] `pre_commit` / `post_merge` hook traits. `Hooks` on `Repository::with_hooks`; a refused `pre_commit` returns `RepoError::HookRejected`.

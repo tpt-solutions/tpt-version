@@ -150,12 +150,17 @@ impl UirNode {
             2 => {
                 let count = r.count()?;
                 let mut entries = BTreeMap::new();
+                let mut previous: Option<String> = None;
                 for _ in 0..count {
                     let key = r.str()?;
-                    let value = Self::decode_at(r, depth + 1)?;
-                    if entries.insert(key, value).is_some() {
-                        return Err(ObjectError::InvalidValue("duplicate map key"));
+                    // Keys must be strictly ascending. Anything else has a second
+                    // encoding of the same value, which would hash differently.
+                    if previous.as_ref().is_some_and(|last| key <= *last) {
+                        return Err(ObjectError::InvalidValue("map keys out of order"));
                     }
+                    let value = Self::decode_at(r, depth + 1)?;
+                    previous = Some(key.clone());
+                    entries.insert(key, value);
                 }
                 Ok(Self::Map(entries))
             }

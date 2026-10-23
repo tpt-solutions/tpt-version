@@ -432,12 +432,16 @@ fn decode_commit(r: &mut Reader<'_>) -> Result<Commit, ObjectError> {
 fn decode_tree(r: &mut Reader<'_>) -> Result<Tree, ObjectError> {
     let count = r.count()?;
     let mut entries = BTreeMap::new();
+    let mut previous: Option<EntityId> = None;
     for _ in 0..count {
         let id = EntityId::from_bytes(r.fixed()?);
         let hash = r.hash()?;
-        if entries.insert(id, hash).is_some() {
-            return Err(ObjectError::InvalidValue("duplicate entity id"));
+        // Ids must be strictly ascending, so each tree has one encoding.
+        if previous.is_some_and(|last| id <= last) {
+            return Err(ObjectError::InvalidValue("entity ids out of order"));
         }
+        previous = Some(id);
+        entries.insert(id, hash);
     }
     Ok(Tree { entries })
 }
