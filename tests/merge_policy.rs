@@ -152,3 +152,53 @@ fn without_a_list_strategy_the_list_conflicts() {
     assert_eq!(result.conflicts.len(), 1);
     assert_eq!(result.conflicts[0].fields[0].path, ["tags"]);
 }
+
+#[derive(Entity, Debug, Clone, PartialEq)]
+struct Note {
+    #[entity(id)]
+    id: EntityId,
+    body: String,
+}
+
+/// Main edits the first line of the body and the side edits the last line.
+fn note_branches(policy: MergePolicy) -> Repository<MemoryStore, LogicalClock> {
+    let mut repo = Repository::open(MemoryStore::default(), LogicalClock::starting_at(1), "main")
+        .unwrap()
+        .with_merge_policy(policy);
+    let note = |body: &str| Note {
+        id: EntityId::from_bytes([5; 16]),
+        body: body.into(),
+    };
+    repo.put_entity(&note("intro\nmiddle\nend")).unwrap();
+    let base = repo.commit("base", &author()).unwrap();
+    repo.branch("side", base).unwrap();
+
+    repo.put_entity(&note("INTRO\nmiddle\nend")).unwrap();
+    repo.commit("main edits the start", &author()).unwrap();
+
+    repo.switch_branch("side").unwrap();
+    repo.put_entity(&note("intro\nmiddle\nFINISH")).unwrap();
+    repo.commit("side edits the end", &author()).unwrap();
+    repo.switch_branch("main").unwrap();
+    repo
+}
+
+#[test]
+fn text_lines_merges_edits_to_different_lines() {
+    let policy = MergePolicy::new().field(&["body"], FieldStrategy::TextLines);
+    let mut repo = note_branches(policy);
+
+    assert!(repo.merge("side").unwrap().conflicts.is_empty());
+    repo.commit("merge side", &author()).unwrap();
+    let merged: Note = repo
+        .entity(&EntityId::from_bytes([5; 16]))
+        .unwrap()
+        .unwrap();
+    assert_eq!(merged.body, "INTRO\nmiddle\nFINISH");
+}
+
+#[test]
+fn text_without_a_text_strategy_still_conflicts() {
+    let mut repo = note_branches(MergePolicy::new());
+    assert_eq!(repo.merge("side").unwrap().conflicts.len(), 1);
+}

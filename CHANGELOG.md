@@ -34,6 +34,8 @@
 - `MergePolicy` and `FieldStrategy` (`Sum`, `Max`, `Min`): numeric fields changed
   on both sides merge by strategy instead of conflicting. `ListStrategy::Union`
   treats a list as a set, and a removal on either side wins.
+- `FieldStrategy::TextLines`: a line-based three-way text merge. Edits to the
+  same or adjacent lines still conflict.
 - `#[derive(Entity)]` (default `derive` feature). Field types implement the new
   `UirValue` trait, which covers the scalars, `EntityId`, `Option`, `Vec` and arrays.
 - History editing: `amend`, `reset_hard`, `revert` and `cherry_pick`. Revert and

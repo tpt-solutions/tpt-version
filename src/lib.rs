@@ -22,6 +22,7 @@ pub mod repo;
 pub mod sign;
 pub mod store;
 pub mod sync;
+mod text_merge;
 pub mod trust;
 pub mod uir;
 

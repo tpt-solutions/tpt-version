@@ -12,6 +12,7 @@ use alloc::vec::Vec;
 use crate::error::RepoError;
 use crate::object::{Conflict, ContentHash, EntityId, FieldConflict, Object, Tree};
 use crate::store::{CasStore, load_entity, load_tree, store_object};
+use crate::text_merge::merge_lines;
 use crate::uir::{Scalar, UirNode};
 
 /// The outcome of a merge. `merged_tree` may reference conflict objects, which
@@ -46,10 +47,15 @@ pub enum FieldStrategy {
     Max,
     /// The smaller of the two sides.
     Min,
+    /// Merges text line by line, as a three-way merge. Edits to different lines
+    /// combine. Edits to the same or adjacent lines conflict. Text fields only.
+    TextLines,
 }
 
-/// Per-field merge strategies, keyed by field path. Only numeric fields can
-/// have one, and only when both sides changed them to different values.
+/// Per-field merge strategies, keyed by field path. A strategy applies only
+/// when both sides changed the field to different values, and only when the
+/// field's values suit it (numbers for `Sum`, `Max` and `Min`, text for
+/// `TextLines`).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MergePolicy {
     strategies: BTreeMap<Vec<String>, FieldStrategy>,
@@ -131,6 +137,7 @@ fn combine(
                     .checked_add(theirs.checked_sub(base)?)?,
                 FieldStrategy::Max => ours.max(theirs),
                 FieldStrategy::Min => ours.min(theirs),
+                FieldStrategy::TextLines => return None,
             };
             Some(UirNode::from(merged))
         }
@@ -148,8 +155,20 @@ fn combine(
                 FieldStrategy::Sum => base + (ours - base) + (theirs - base),
                 FieldStrategy::Max => ours.max(theirs),
                 FieldStrategy::Min => ours.min(theirs),
+                FieldStrategy::TextLines => return None,
             };
             Some(UirNode::from(merged))
+        }
+        (UirNode::Scalar(Scalar::Text(ours)), UirNode::Scalar(Scalar::Text(theirs)))
+            if strategy == FieldStrategy::TextLines =>
+        {
+            let base = match base {
+                None => "",
+                Some(UirNode::Scalar(Scalar::Text(base))) => base.as_str(),
+                Some(_) => return None,
+            };
+            let merged = merge_lines(base, ours, theirs)?;
+            Some(UirNode::Scalar(Scalar::Text(merged)))
         }
         _ => None,
     }
