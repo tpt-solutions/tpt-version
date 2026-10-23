@@ -22,6 +22,7 @@ const TAG_ENTITY: u8 = 2;
 const TAG_TREE: u8 = 3;
 const TAG_COMMIT: u8 = 4;
 const TAG_CONFLICT: u8 = 5;
+const TAG_REVIEW: u8 = 6;
 
 fn write_hex(f: &mut fmt::Formatter<'_>, bytes: &[u8]) -> fmt::Result {
     for byte in bytes {
@@ -199,6 +200,8 @@ pub enum Object {
     Commit(Commit),
     /// An unresolved merge conflict.
     Conflict(Conflict),
+    /// A signed verdict on a commit.
+    Review(Review),
 }
 
 impl Object {
@@ -210,6 +213,7 @@ impl Object {
             Self::Tree(_) => "tree",
             Self::Commit(_) => "commit",
             Self::Conflict(_) => "conflict",
+            Self::Review(_) => "review",
         }
     }
 
@@ -237,6 +241,7 @@ impl Object {
             }
             Self::Commit(commit) => encode_commit(commit, true),
             Self::Conflict(conflict) => encode_conflict(conflict),
+            Self::Review(review) => encode_review(review, true),
         }
     }
 
@@ -249,6 +254,7 @@ impl Object {
             TAG_TREE => Self::Tree(decode_tree(&mut r)?),
             TAG_COMMIT => Self::Commit(decode_commit(&mut r)?),
             TAG_CONFLICT => Self::Conflict(decode_conflict(&mut r)?),
+            TAG_REVIEW => Self::Review(decode_review(&mut r)?),
             other => return Err(ObjectError::UnknownTag(other)),
         };
         r.finish()?;
@@ -266,6 +272,111 @@ pub(crate) fn wrong_kind(expected: &'static str, found: &Object) -> RepoError {
     RepoError::Object(ObjectError::WrongKind {
         expected,
         found: found.kind(),
+    })
+}
+
+/// What a reviewer concluded about a commit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Verdict {
+    /// The commit is good as it is.
+    Approve,
+    /// The commit needs changes before it should be accepted.
+    RequestChanges,
+    /// A remark that does not decide anything.
+    Comment,
+}
+
+impl Verdict {
+    fn to_byte(self) -> u8 {
+        match self {
+            Self::Approve => 0,
+            Self::RequestChanges => 1,
+            Self::Comment => 2,
+        }
+    }
+
+    fn from_byte(byte: u8) -> Result<Self, ObjectError> {
+        match byte {
+            0 => Ok(Self::Approve),
+            1 => Ok(Self::RequestChanges),
+            2 => Ok(Self::Comment),
+            _ => Err(ObjectError::InvalidValue("verdict")),
+        }
+    }
+}
+
+/// A signed verdict on one commit. Stored in the CAS, and listed under the
+/// `reviews/` refs so that gc and fsck see it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Review {
+    /// The commit being reviewed.
+    pub commit: ContentHash,
+    /// The verdict.
+    pub verdict: Verdict,
+    /// Who wrote the review. As with [`Commit::author`], a label, not proof.
+    pub author: ActorId,
+    /// When the review was written, from the repository's clock.
+    pub timestamp: u64,
+    /// Free text explaining the verdict.
+    pub note: String,
+    /// The reviewer's signature over [`Review::signing_bytes`].
+    pub signature: Option<Signature>,
+}
+
+impl Review {
+    /// The bytes the signature covers: the review encoded without its signature.
+    pub fn signing_bytes(&self) -> Vec<u8> {
+        encode_review(self, false)
+    }
+
+    /// Whether the signature is present and verifies against the review's
+    /// contents. It says nothing about whether the signer is trusted.
+    pub fn is_valid(&self) -> bool {
+        self.signature
+            .as_ref()
+            .is_some_and(|signature| crate::sign::verify(signature, &self.signing_bytes()))
+    }
+}
+
+fn encode_review(review: &Review, with_signature: bool) -> Vec<u8> {
+    let mut w = Writer::new(TAG_REVIEW);
+    w.fixed(review.commit.as_bytes());
+    w.u8(review.verdict.to_byte());
+    w.fixed(review.author.as_bytes());
+    w.u64(review.timestamp);
+    w.str(&review.note);
+    match (&review.signature, with_signature) {
+        (Some(signature), true) => {
+            w.u8(1);
+            w.fixed(&signature.signer);
+            w.fixed(&signature.bytes);
+        }
+        _ => w.u8(0),
+    }
+    w.finish()
+}
+
+fn decode_review(r: &mut Reader<'_>) -> Result<Review, ObjectError> {
+    let commit = r.hash()?;
+    let verdict = Verdict::from_byte(r.u8()?)?;
+    let author = ActorId::from_bytes(r.fixed()?);
+    let timestamp = r.u64()?;
+    let note = r.str()?;
+    let signature = match r.u8()? {
+        0 => None,
+        1 => Some(Signature {
+            signer: r.fixed()?,
+            bytes: r.fixed()?,
+        }),
+        _ => return Err(ObjectError::InvalidValue("signature flag")),
+    };
+    Ok(Review {
+        commit,
+        verdict,
+        author,
+        timestamp,
+        note,
+        signature,
     })
 }
 

@@ -128,7 +128,7 @@ Plan: see the review notes. Tier 1 and Tier 2 come first.
 - [~] Per-field merge strategies. `MergePolicy` on the repository (`with_merge_policy`) gives numeric fields `Sum`, `Max` or `Min`, text fields `TextLines`, lists `ListStrategy::Union`, and any field `LastWriterWins` (the newer commit by timestamp, then hash, wins). Still open: the strategies are not declared on `Entity`, and LWW does not apply to the virtual-base and cherry-pick paths, which have no commit order.
 - [ ] Post-merge semantic validators (constraints, formula references).
 - [~] Time-travel queries: `entity_at` (by commit), `commit_as_of` and `entity_as_of` (by timestamp) are done. Diff-of-diffs for merge review is not.
-- [ ] Signed review / approval objects stored in the CAS.
+- [x] Signed review / approval objects stored in the CAS. `Object::Review` (tag 6) holds a verdict on a commit, signed by the repository's signer. Reviews live under `reviews/<commit>/<reviewer>` refs, so gc and fsck see them. A reviewer's later review replaces their earlier one. `Repository::review`, `reviews_of`, and `Review::is_valid` (signature only, not trust). Covered by `tests/reviews.rs`.
 - [x] Diff output for viewers: `export::diff_to_json`, `node_json` for values, and `export::diff_to_html` for a table with escaped content. Written by hand with no serde dependency, by design.
 - [ ] Live-collaboration op log on top of the DAG.
 

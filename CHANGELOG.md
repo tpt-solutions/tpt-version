@@ -36,6 +36,8 @@
   treats a list as a set, and a removal on either side wins.
 - Criss-cross merges use a virtual base built from every best common ancestor
   (`dag::merge_bases`), instead of one arbitrary base.
+- Signed reviews: `Object::Review`, with `Repository::review` / `reviews_of`. They
+  are stored under `reviews/` refs, which branch names may not use.
 - `FieldStrategy::LastWriterWins`: a branch merge takes the value from the newer
   commit (by timestamp, then hash).
 - `FieldStrategy::TextLines`: a line-based three-way text merge. Edits to the

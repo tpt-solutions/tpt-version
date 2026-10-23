@@ -15,9 +15,13 @@ use crate::error::RepoError;
 use crate::history::{self, EntityVersion, FieldBlame};
 use crate::maintenance::{self, GcReport};
 use crate::merge::{self, MergePolicy, MergeResult, Resolution, Side};
-use crate::object::{ActorId, Commit, Conflict, ContentHash, EntityId, Object, Tree};
+use crate::object::{
+    ActorId, Commit, Conflict, ContentHash, EntityId, Object, Review, Tree, Verdict, wrong_kind,
+};
 use crate::sign::{Signature, Signer};
-use crate::store::{CasStore, PruneStore, RefStore, load_entity, load_tree, store_object};
+use crate::store::{
+    CasStore, PruneStore, RefStore, load_entity, load_object, load_tree, store_object,
+};
 use crate::trust::TrustPolicy;
 use crate::uir::UirNode;
 
@@ -70,6 +74,10 @@ impl Clock for SystemClock {
 /// Refs under this prefix are tags. Branch names may not start with it.
 const TAG_PREFIX: &str = "tags/";
 
+/// Refs under this prefix are reviews, one per commit and reviewer. Branch names
+/// may not start with it either.
+const REVIEW_PREFIX: &str = "reviews/";
+
 /// The ref that holds tag `name`.
 fn tag_ref(name: &str) -> String {
     alloc::format!("{TAG_PREFIX}{name}")
@@ -83,6 +91,7 @@ pub fn validate_branch_name(name: &str) -> Result<(), RepoError> {
     let valid = !name.is_empty()
         && name.len() <= 200
         && !name.starts_with(TAG_PREFIX)
+        && !name.starts_with(REVIEW_PREFIX)
         && !name.starts_with(['/', '.', '-'])
         && !name.ends_with(['/', '.'])
         && !name.contains("..")
@@ -485,8 +494,62 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
             .store
             .list_refs()?
             .into_iter()
-            .filter(|name| !name.starts_with(TAG_PREFIX))
+            .filter(|name| !name.starts_with(TAG_PREFIX) && !name.starts_with(REVIEW_PREFIX))
             .collect())
+    }
+
+    /// Records a review of `commit`, signed by the repository's signer when it has
+    /// one. A reviewer's later review of the same commit replaces their earlier
+    /// one. Without a signer the reviewer is identified by `author` alone.
+    pub fn review(
+        &mut self,
+        commit: ContentHash,
+        verdict: Verdict,
+        note: &str,
+        author: &ActorId,
+    ) -> Result<ContentHash, RepoError> {
+        dag::load_commit(&self.store, &commit)?;
+        let mut review = Review {
+            commit,
+            verdict,
+            author: *author,
+            timestamp: self.clock.now(),
+            note: note.into(),
+            signature: None,
+        };
+        if let Some(signer) = &self.signer {
+            review.signature = Some(Signature {
+                signer: signer.public_key(),
+                bytes: signer.sign(&review.signing_bytes()),
+            });
+        }
+        let reviewer: Vec<u8> = match &review.signature {
+            Some(signature) => signature.signer.to_vec(),
+            None => author.as_bytes().to_vec(),
+        };
+        let name = review_ref(&commit, &reviewer);
+        let hash = store_object(&mut self.store, &Object::Review(review))?;
+        self.store.write_ref(&name, hash)?;
+        Ok(hash)
+    }
+
+    /// Every review of `commit`, one per reviewer, in reviewer order. Check each
+    /// with [`Review::is_valid`] before relying on it.
+    pub fn reviews_of(&self, commit: &ContentHash) -> Result<Vec<Review>, RepoError> {
+        let prefix = alloc::format!("{REVIEW_PREFIX}{commit}/");
+        let mut reviews = Vec::new();
+        for name in self.store.list_refs()? {
+            if !name.starts_with(&prefix) {
+                continue;
+            }
+            if let Some(hash) = self.store.read_ref(&name)? {
+                match load_object(&self.store, &hash)? {
+                    Object::Review(review) => reviews.push(review),
+                    other => return Err(wrong_kind("review", &other)),
+                }
+            }
+        }
+        Ok(reviews)
     }
 
     /// Creates an immutable tag pointing at `commit`. A tag name follows the
@@ -906,4 +969,13 @@ fn commit_entries<S: CasStore>(
     commit: &ContentHash,
 ) -> Result<BTreeMap<EntityId, ContentHash>, RepoError> {
     Ok(load_tree(store, &dag::commit_tree(store, commit)?)?.entries)
+}
+
+/// The ref that holds one reviewer's review of one commit.
+fn review_ref(commit: &ContentHash, reviewer: &[u8]) -> String {
+    let key: String = reviewer
+        .iter()
+        .map(|byte| alloc::format!("{byte:02x}"))
+        .collect();
+    alloc::format!("{REVIEW_PREFIX}{commit}/{key}")
 }

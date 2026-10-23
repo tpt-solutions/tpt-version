@@ -31,7 +31,9 @@ pub use entity::{Entity, UirValue};
 
 pub use error::{MergeError, ObjectError, RepoError, StoreError};
 pub use merge::{MergeResult, Resolution};
-pub use object::{ActorId, Commit, Conflict, ContentHash, EntityId, FieldConflict, Object, Tree};
+pub use object::{
+    ActorId, Commit, Conflict, ContentHash, EntityId, FieldConflict, Object, Review, Tree, Verdict,
+};
 pub use repo::{Clock, LogicalClock, Repository};
 pub use sign::{Ed25519Signer, Signature, Signer};
 pub use store::{CasStore, MemoryStore, RefStore};
