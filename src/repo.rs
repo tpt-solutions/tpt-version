@@ -2,7 +2,7 @@
 //! merges and optionally signed commits.
 
 use alloc::boxed::Box;
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
@@ -17,6 +17,7 @@ use crate::merge::{self, MergeResult, Resolution};
 use crate::object::{ActorId, Commit, Conflict, ContentHash, EntityId, Object, Tree};
 use crate::sign::{Signature, Signer};
 use crate::store::{CasStore, PruneStore, RefStore, load_entity, load_tree, store_object};
+use crate::trust::TrustPolicy;
 use crate::uir::UirNode;
 
 /// The branch a fresh repository starts on.
@@ -132,6 +133,7 @@ pub struct Repository<S, C> {
     merge_parents: Vec<ContentHash>,
     conflicts: Vec<Conflict>,
     hooks: Option<Box<dyn Hooks>>,
+    trust: Option<TrustPolicy>,
 }
 
 impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
@@ -160,6 +162,7 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
             merge_parents: Vec::new(),
             conflicts: Vec::new(),
             hooks: None,
+            trust: None,
         })
     }
 
@@ -173,6 +176,35 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
     pub fn with_hooks(mut self, hooks: Box<dyn Hooks>) -> Self {
         self.hooks = Some(hooks);
         self
+    }
+
+    /// Applies a trust policy from now on. Commits to a governed branch must
+    /// then be signed by a trusted key, and so must every commit a merge brings
+    /// into one. Commits made before the policy are not re-checked.
+    pub fn with_trust_policy(mut self, policy: TrustPolicy) -> Self {
+        self.trust = Some(policy);
+        self
+    }
+
+    /// Refuses a merge into a governed branch when it brings in a commit that
+    /// no trusted key signed.
+    fn ensure_trusted_incoming(&self, theirs: &ContentHash) -> Result<(), RepoError> {
+        let (Some(policy), Some(branch)) = (&self.trust, &self.branch) else {
+            return Ok(());
+        };
+        if !policy.governs(branch) {
+            return Ok(());
+        }
+        let ours: BTreeSet<ContentHash> = match self.head {
+            Some(head) => dag::ancestors(&self.store, &[head])?.into_iter().collect(),
+            None => BTreeSet::new(),
+        };
+        for hash in dag::ancestors(&self.store, &[*theirs])? {
+            if !ours.contains(&hash) && !policy.accepts(&dag::load_commit(&self.store, &hash)?) {
+                return Err(RepoError::Untrusted(branch.clone()));
+            }
+        }
+        Ok(())
     }
 
     /// The changes in the working copy that a commit would record, compared
@@ -281,6 +313,13 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
             });
         }
 
+        if let (Some(policy), Some(name)) = (&self.trust, &self.branch)
+            && policy.governs(name)
+            && !policy.accepts(&commit)
+        {
+            return Err(RepoError::Untrusted(name.clone()));
+        }
+
         let hash = store_object(&mut self.store, &Object::Commit(commit))?;
         if let Some(name) = self.branch.clone() {
             self.advance_branch(&name, self.head, hash)?;
@@ -378,6 +417,7 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
         let theirs = self
             .resolve_branch(branch)?
             .ok_or_else(|| RepoError::BranchNotFound(branch.into()))?;
+        self.ensure_trusted_incoming(&theirs)?;
         let theirs_tree = dag::commit_tree(&self.store, &theirs)?;
 
         let Some(ours) = self.head else {

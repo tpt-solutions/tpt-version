@@ -19,6 +19,7 @@ pub mod prelude;
 pub mod repo;
 pub mod sign;
 pub mod store;
+pub mod trust;
 pub mod uir;
 
 pub use diff::{DiffEntry, EntityDiff, FieldChange};
