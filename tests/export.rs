@@ -38,3 +38,28 @@ fn modified_entity_lists_each_changed_field() {
 fn an_empty_diff_is_an_empty_array() {
     assert_eq!(diff_to_json(&[]), "[]");
 }
+
+#[test]
+fn html_escapes_entity_content() {
+    use tpt_version::diff::{DiffEntry, EntityDiff, FieldChange};
+    use tpt_version::export::diff_to_html;
+    use tpt_version::{ContentHash, Scalar, UirNode};
+
+    let modified = DiffEntry::Modified {
+        id: id(9),
+        old_hash: ContentHash::of(b"old"),
+        new_hash: ContentHash::of(b"new"),
+        diff: EntityDiff {
+            field_changes: vec![FieldChange {
+                field_path: vec!["<b>".into()],
+                old_value: None,
+                new_value: Some(UirNode::Scalar(Scalar::Text("</td><script>".into()))),
+            }],
+        },
+    };
+    let html = diff_to_html(&[modified]);
+    assert!(html.starts_with("<table"), "{html}");
+    assert!(html.contains("<td>&lt;b&gt;</td>"), "{html}");
+    assert!(html.contains("&lt;/td&gt;&lt;script&gt;"), "{html}");
+    assert!(!html.contains("<script>"), "{html}");
+}

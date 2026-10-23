@@ -1,0 +1,17 @@
+version: 2
+updates:
+  # Action versions in the CI workflow.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+  # The crate and the derive crate. Dependabot does not move git dependencies,
+  # so the tpt-crypto and tpt-testkit revisions are still updated by hand.
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "cargo"
+    directory: "/derive"
+    schedule:
+      interval: "weekly"

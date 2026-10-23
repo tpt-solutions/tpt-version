@@ -29,7 +29,7 @@
   and move the branch only fast-forward.
 - `Repository::entity_at` reads an entity from a past commit, and
   `commit_as_of` / `entity_as_of` find the state at a timestamp.
-- `export::diff_to_json` and `export::node_json`: JSON for diffs and values.
+- `export::diff_to_json`, `export::node_json` and `export::diff_to_html`.
 - `app_template` example: a derived entity, a workspace type, and a merge UI trait.
 - `MergePolicy` and `FieldStrategy` (`Sum`, `Max`, `Min`): numeric fields changed
   on both sides merge by strategy instead of conflicting. `ListStrategy::Union`

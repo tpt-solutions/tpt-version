@@ -129,7 +129,7 @@ Plan: see the review notes. Tier 1 and Tier 2 come first.
 - [ ] Post-merge semantic validators (constraints, formula references).
 - [~] Time-travel queries: `entity_at` (by commit), `commit_as_of` and `entity_as_of` (by timestamp) are done. Diff-of-diffs for merge review is not.
 - [ ] Signed review / approval objects stored in the CAS.
-- [~] JSON diff output (`export::diff_to_json`, and `node_json` for values), written by hand with no serde dependency. HTML output is not done.
+- [x] Diff output for viewers: `export::diff_to_json`, `node_json` for values, and `export::diff_to_html` for a table with escaped content. Written by hand with no serde dependency, by design.
 - [ ] Live-collaboration op log on top of the DAG.
 
 ### Tier 5: automation and usability

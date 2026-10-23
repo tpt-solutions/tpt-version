@@ -5,7 +5,7 @@
 //! as lowercase hex, and non-finite floats as `"NaN"`, `"Infinity"` or
 //! `"-Infinity"`.
 
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt::Write;
 
@@ -114,6 +114,62 @@ fn quoted(text: &str) -> String {
         }
     }
     out.push('"');
+    out
+}
+
+/// Renders a list of entity changes as an HTML table, one row per changed field,
+/// for a web viewer. Values are shown as JSON and every piece of text is escaped,
+/// so entity content cannot inject markup.
+pub fn diff_to_html(entries: &[DiffEntry]) -> String {
+    let mut rows = String::new();
+    for entry in entries {
+        match entry {
+            DiffEntry::Added { id, .. } => {
+                push_row(&mut rows, "added", &id.to_string(), "", "", "");
+            }
+            DiffEntry::Removed { id, .. } => {
+                push_row(&mut rows, "removed", &id.to_string(), "", "", "");
+            }
+            DiffEntry::Modified { id, diff, .. } => {
+                for change in &diff.field_changes {
+                    push_row(
+                        &mut rows,
+                        "modified",
+                        &id.to_string(),
+                        &change.field_path.join("."),
+                        &optional_node_json(change.old_value.as_ref()),
+                        &optional_node_json(change.new_value.as_ref()),
+                    );
+                }
+            }
+        }
+    }
+    alloc::format!(
+        "<table class=\"tpt-diff\">\n<thead><tr><th>change</th><th>entity</th><th>field</th><th>old</th><th>new</th></tr></thead>\n<tbody>\n{rows}</tbody>\n</table>\n"
+    )
+}
+
+fn push_row(rows: &mut String, change: &str, id: &str, field: &str, old: &str, new: &str) {
+    let cells = [change, id, field, old, new];
+    rows.push_str("<tr>");
+    for cell in cells {
+        let _ = write!(rows, "<td>{}</td>", html_escape(cell));
+    }
+    rows.push_str("</tr>\n");
+}
+
+fn html_escape(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            c => out.push(c),
+        }
+    }
     out
 }
 
