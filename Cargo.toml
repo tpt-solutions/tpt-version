@@ -27,3 +27,8 @@ tpt-crypto-field = { git = "https://github.com/tpt-solutions/tpt-crypto", defaul
 [[example]]
 name = "cad_branch_merge"
 required-features = ["std"]
+
+[[bench]]
+name = "throughput"
+harness = false
+required-features = ["std"]

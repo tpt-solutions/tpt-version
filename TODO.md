@@ -58,7 +58,7 @@ Source of truth: [spec.txt](spec.txt). Tick items as they are completed.
 - [x] Milestone: show what changed between two commits
 
 ## Phase 4: Merging
-- [~] `find_merge_base`. Criss-cross histories pick the newest base by timestamp, ties broken by hash, so the choice is deterministic. There is no recursive merge of several bases, and no test builds a criss-cross history yet.
+- [x] `find_merge_base`. Criss-cross histories pick the newest base by timestamp, ties broken by hash, so the choice is deterministic (tested in `tests/history.rs`). There is no recursive merge of several bases.
 - [x] `merge_trees` entity-level cases (only ours, only theirs, identical, add/add, delete/modify)
 - [x] Field-level 3-way merge; non-overlapping fields auto-merge
 - [x] Conflict objects (field path, base/ours/theirs values) stored in the CAS and referenced from the merged tree
@@ -81,7 +81,7 @@ Source of truth: [spec.txt](spec.txt). Tick items as they are completed.
 - [~] Golden tests: fixed entity → fixed hash. One pinned hash is in `tests/objects.rs`, and it is checked against a SHA-256 known-answer vector. It has not been run on macOS or Windows yet (CI matrix pending). This uses a plain test, not `tpt-testkit::golden`.
 - [~] Property tests: random three-way merges checked against an independent oracle (`tests/random_merges.rs`). This is a custom xorshift generator, not `tpt-testkit::property`. It covers tree-level merges only, not random commit histories through `Repository`.
 - [x] Diff accuracy tests against known tree pairs
-- [ ] Benchmarks: commit 10,000 entities, diff two large trees, merge two divergent branches. Not started. This needs a bench harness decision (criterion or `tpt-testkit::bench`).
+- [~] Benchmarks: `benches/throughput.rs` (`cargo bench --bench throughput`, plain timers, no harness). Single run on this machine: commit 10,000 entities 22.8 ms; diff two 10,000-entity trees 28.8 ms; merge two divergent branches 33.6 ms. Not statistical, and not run in CI. Criterion or tpt-testkit::bench would give proper numbers.
 - [x] `no_std` build check on a WASM target (also checked on `thumbv7em-none-eabihf`)
 
 ## Open items to confirm later

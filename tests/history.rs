@@ -245,3 +245,45 @@ fn missing_commit_is_a_store_error() {
     );
     assert!(store.read_ref("main").unwrap().is_none());
 }
+
+/// Two branches each merge the other's older tip, so both `x1` and `y1` are
+/// best common ancestors. The merge base must be chosen deterministically.
+#[test]
+fn criss_cross_merge_base_is_deterministic() {
+    let mut repo = new_repo();
+    repo.put_entity(&vertex(1, [0.0; 3])).unwrap();
+    let root = repo.commit("root", &author()).unwrap();
+    repo.branch("x", root).unwrap();
+    repo.branch("y", root).unwrap();
+
+    repo.switch_branch("x").unwrap();
+    repo.put_entity(&vertex(2, [1.0; 3])).unwrap();
+    let x1 = repo.commit("x1", &author()).unwrap();
+    repo.branch("x1-tip", x1).unwrap();
+
+    repo.switch_branch("y").unwrap();
+    repo.put_entity(&vertex(3, [2.0; 3])).unwrap();
+    let y1 = repo.commit("y1", &author()).unwrap();
+
+    // Crosswise merges: x takes y1, then y takes x1.
+    repo.switch_branch("x").unwrap();
+    repo.merge("y").unwrap();
+    let mx = repo.commit("mx", &author()).unwrap();
+    repo.switch_branch("y").unwrap();
+    repo.merge("x1-tip").unwrap();
+    let my = repo.commit("my", &author()).unwrap();
+
+    let base = dag::find_merge_base(repo.store(), &mx, &my)
+        .unwrap()
+        .unwrap();
+    assert!(base == x1 || base == y1, "base must be one of the two tips");
+
+    // The winner is the newer tip, ties broken by hash, so every peer agrees.
+    let ts = |h| dag::load_commit(repo.store(), &h).unwrap().timestamp;
+    let expected = if (ts(x1), x1) > (ts(y1), y1) { x1 } else { y1 };
+    assert_eq!(base, expected);
+    assert_eq!(
+        dag::find_merge_base(repo.store(), &my, &mx).unwrap(),
+        Some(base)
+    );
+}
