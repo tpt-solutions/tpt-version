@@ -1,9 +1,6 @@
-//! tpt-version: a content-addressable, structure-aware version control engine
-//! for tpt-model entities.
-//!
-//! Entities are stored as canonical [`uir::UirNode`] trees, grouped into
-//! snapshots ([`object::Tree`]) and linked into a Merkle DAG of
-//! [`object::Commit`]s. Diffs and merges work on entity fields, not text lines.
+//! The crate README, which also serves as the crate overview. Its Quick Start
+//! is compiled as a doctest.
+#![doc = include_str!("../README.md")]
 #![cfg_attr(not(feature = "std"), no_std)]
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
@@ -17,6 +14,7 @@ pub mod entity;
 pub mod error;
 pub mod merge;
 pub mod object;
+pub mod prelude;
 pub mod repo;
 pub mod sign;
 pub mod store;

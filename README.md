@@ -25,20 +25,86 @@ for the application to resolve. Nothing is resolved silently.
 ## Quick start
 
 ```rust
-use tpt_version::{ActorId, LogicalClock, MemoryStore, Repository};
+use std::collections::BTreeMap;
 
-let mut repo = Repository::open(MemoryStore::default(), LogicalClock::starting_at(1), "main")?;
-repo.put_entity(&vertex)?;               // `vertex: impl tpt_version::Entity`
-let first = repo.commit("initial layout", &ActorId::from_bytes([1; 16]))?;
-repo.branch("feature", first)?;
+use tpt_version::error::ObjectError;
+use tpt_version::prelude::*;
+
+/// A CAD vertex. Its id is stored in the entity, so it reads back the same.
+struct Vertex {
+    id: EntityId,
+    position: [f64; 3],
+}
+
+impl Entity for Vertex {
+    fn id(&self) -> EntityId {
+        self.id
+    }
+
+    fn to_uir(&self) -> UirNode {
+        let [x, y, z] = self.position;
+        UirNode::Map(BTreeMap::from([
+            ("id".into(), UirNode::Scalar(Scalar::Bytes(self.id.as_bytes().to_vec()))),
+            ("x".into(), UirNode::from(x)),
+            ("y".into(), UirNode::from(y)),
+            ("z".into(), UirNode::from(z)),
+        ]))
+    }
+
+    fn from_uir(node: &UirNode) -> Result<Self, ObjectError> {
+        let UirNode::Map(fields) = node else {
+            return Err(ObjectError::InvalidValue("vertex"));
+        };
+        let float = |name| match fields.get(name) {
+            Some(UirNode::Scalar(Scalar::Float(value))) => Ok(*value),
+            _ => Err(ObjectError::InvalidValue("coordinate")),
+        };
+        let id = match fields.get("id") {
+            Some(UirNode::Scalar(Scalar::Bytes(bytes))) => <[u8; 16]>::try_from(bytes.as_slice())
+                .map(EntityId::from_bytes)
+                .map_err(|_| ObjectError::InvalidValue("vertex id"))?,
+            _ => return Err(ObjectError::InvalidValue("vertex id")),
+        };
+        Ok(Self {
+            id,
+            position: [float("x")?, float("y")?, float("z")?],
+        })
+    }
+}
+
+fn main() -> Result<(), RepoError> {
+    let author = ActorId::from_bytes([1; 16]);
+    let mut repo = Repository::open(MemoryStore::default(), LogicalClock::starting_at(1), "main")?;
+
+    repo.put_entity(&Vertex {
+        id: EntityId::from_bytes([7; 16]),
+        position: [0.0, 0.0, 0.0],
+    })?;
+    let first = repo.commit("initial layout", &author)?;
+    repo.branch("feature", first)?;
+    Ok(())
+}
 ```
 
-See [`examples/cad_branch_merge.rs`](examples/cad_branch_merge.rs) for a full
-branch, edit, auto-merge, conflict and resolution walkthrough:
+## Examples
 
-```sh
-cargo run --example cad_branch_merge
-```
+Each example is a complete program. Run one with `cargo run --example <name>`.
+
+| Example | Shows |
+| --- | --- |
+| [`cad_branch_merge`](examples/cad_branch_merge.rs) | Branch, edit, auto-merge, conflict and resolution on CAD vertices |
+| [`spreadsheet_cells`](examples/spreadsheet_cells.rs) | Cells keyed by address: clean merges, and a real conflict on one cell |
+| [`document_blocks`](examples/document_blocks.rs) | Blocks with a list field, and why a list conflicts as one value |
+| [`file_store_cli`](examples/file_store_cli.rs) | A persistent history on disk, driven from the command line |
+| [`signed_history`](examples/signed_history.rs) | Ed25519-signed commits, and a forged commit being refused on load |
+| [`s3_sync`](examples/s3_sync.rs) | Two machines syncing through a bucket, with a stale push refused (`--features s3`) |
+
+## Documentation
+
+- [Concepts](docs/concepts.md): objects, commits, merging, signing, stores, `no_std`
+- [Conflict cookbook](docs/conflicts.md): each kind of conflict and how to settle it
+- [Porting your data model](docs/porting.md): granularity, stable ids, lists, floats
+- [FAQ](docs/faq.md): how this compares with Git and CRDTs
 
 ## Layout
 

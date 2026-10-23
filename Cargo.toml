@@ -25,6 +25,26 @@ tpt-crypto-sig = { git = "https://github.com/tpt-solutions/tpt-crypto", default-
 name = "cad_branch_merge"
 required-features = ["std"]
 
+[[example]]
+name = "spreadsheet_cells"
+required-features = ["std"]
+
+[[example]]
+name = "document_blocks"
+required-features = ["std"]
+
+[[example]]
+name = "file_store_cli"
+required-features = ["std"]
+
+[[example]]
+name = "signed_history"
+required-features = ["std"]
+
+[[example]]
+name = "s3_sync"
+required-features = ["s3"]
+
 [[bench]]
 name = "throughput"
 harness = false
