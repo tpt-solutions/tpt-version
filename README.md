@@ -97,6 +97,7 @@ Each example is a complete program. Run one with `cargo run --example <name>`.
 | [`document_blocks`](examples/document_blocks.rs) | Blocks with a list field, and why a list conflicts as one value |
 | [`file_store_cli`](examples/file_store_cli.rs) | A persistent history on disk, driven from the command line |
 | [`signed_history`](examples/signed_history.rs) | Ed25519-signed commits, and a forged commit being refused on load |
+| [`app_template`](examples/app_template.rs) | An app skeleton: a derived entity, a workspace type, and a merge UI trait |
 | [`s3_sync`](examples/s3_sync.rs) | Two machines syncing through a bucket, with a stale push refused (`--features s3`) |
 
 ## Documentation

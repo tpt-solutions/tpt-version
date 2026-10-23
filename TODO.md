@@ -108,7 +108,7 @@ Plan: see the review notes. Tier 1 and Tier 2 come first.
 - [x] Examples: `spreadsheet_cells`, `document_blocks`, `file_store_cli`, `signed_history`, `s3_sync`; each is linked from the README (`cargo run --example <name>`; `s3_sync` needs `--features s3`).
 - [x] `#[derive(Entity)]` (derive crate or `macro_rules!`) to remove hand-written `to_uir` / `from_uir`. It is a proc-macro in `derive/`, behind the default `derive` feature. Each field type implements `UirValue`, which covers scalars, `EntityId`, `Option`, `Vec` and fixed arrays.
 - [x] `prelude` module; the README is the crate docs, so its Quick Start is a doctest.
-- [~] App template (entity + repo + merge-UI callback): not started. The "porting your data model" guide is done (`docs/porting.md`).
+- [x] App template (entity + repo + merge-UI callback). `examples/app_template.rs` has a derived entity, a `Workspace` that owns the repository, and a `MergeUi` trait the app implements. The "porting your data model" guide is `docs/porting.md`.
 - [x] `docs/` guide: `docs/concepts.md` (includes store selection and no_std/WASM), `docs/conflicts.md`, `docs/porting.md` and `docs/faq.md` (versus Git and CRDTs).
 - [ ] WASM demo page showing branch / edit / merge in the browser.
 - [ ] Release prep: publishable dependencies (tpt-crypto, tpt-testkit) so `cargo add tpt-version` works.
