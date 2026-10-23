@@ -581,6 +581,56 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
         Ok((parent_tree, loaded.tree_hash))
     }
 
+    /// The tree to merge from when `a` and `b` meet. With several best common
+    /// ancestors (a criss-cross history) they are first merged into a virtual
+    /// base, so that no single arbitrary ancestor decides the answer.
+    fn merge_base_tree(
+        &mut self,
+        a: &ContentHash,
+        b: &ContentHash,
+    ) -> Result<ContentHash, RepoError> {
+        let mut bases = dag::merge_bases(&self.store, a, b)?;
+        match bases.len() {
+            0 => store_object(&mut self.store, &Object::Tree(Tree::default())),
+            1 => dag::commit_tree(&self.store, &bases[0]),
+            _ => {
+                let mut virtual_base = bases.remove(0);
+                for next in bases {
+                    virtual_base = self.merge_virtual(virtual_base, next)?;
+                }
+                dag::commit_tree(&self.store, &virtual_base)
+            }
+        }
+    }
+
+    /// Merges two commits into a stored "virtual" commit that no branch points at,
+    /// whose tree is the base for the next merge. Conflicts are settled as ours,
+    /// so the virtual base is always complete.
+    fn merge_virtual(&mut self, a: ContentHash, b: ContentHash) -> Result<ContentHash, RepoError> {
+        let base = self.merge_base_tree(&a, &b)?;
+        let a_tree = dag::commit_tree(&self.store, &a)?;
+        let b_tree = dag::commit_tree(&self.store, &b)?;
+        let result =
+            merge::merge_trees_with(&mut self.store, base, a_tree, b_tree, &self.merge_policy)?;
+        let mut entries = load_tree(&self.store, &result.merged_tree)?.entries;
+        for conflict in result.conflicts {
+            match conflict.ours {
+                Some(ours) => entries.insert(conflict.entity, ours),
+                None => entries.remove(&conflict.entity),
+            };
+        }
+        let tree_hash = store_object(&mut self.store, &Object::Tree(Tree { entries }))?;
+        let commit = Commit {
+            tree_hash,
+            parents: vec![a, b],
+            author: ActorId::from_bytes([0; 16]),
+            timestamp: 0,
+            message: String::from("virtual merge base"),
+            signature: None,
+        };
+        store_object(&mut self.store, &Object::Commit(commit))
+    }
+
     /// Three-way merges `theirs` into the working copy, with `base` as the common
     /// ancestor, and stages the result.
     fn apply_change(
@@ -677,10 +727,7 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
             });
         }
 
-        let base_tree = match dag::find_merge_base(&self.store, &ours, &theirs)? {
-            Some(base) => dag::commit_tree(&self.store, &base)?,
-            None => store_object(&mut self.store, &Object::Tree(Tree::default()))?,
-        };
+        let base_tree = self.merge_base_tree(&ours, &theirs)?;
         let result = merge::merge_trees_with(
             &mut self.store,
             base_tree,

@@ -120,7 +120,7 @@ Plan: see the review notes. Tier 1 and Tier 2 come first.
 - [x] `fsck` (verify objects, signatures, refs) and `gc` (reachability). `maintenance::fsck` collects every problem; `Repository::gc` roots on refs, HEAD, the working copy and any pending merge, and refuses to delete if a reachable object is missing. S3 does not implement `PruneStore` yet, so gc is FS and memory only.
 - [x] `fetch` / `push` sync between stores (`sync::push`, `sync::fetch`). There is no separate `Remote` trait: any `CasStore` + `RefStore` is a remote. Only the reachable objects the destination lacks are copied, and the ref moves by compare-and-swap, so non-fast-forward updates are refused.
 - [x] Signature trust policy (`TrustPolicy` in `trust`, require signed commits per branch). Commits to a governed branch and merges into it need a trusted signature. Commits made before the policy are not re-checked, and a branch outside the policy is unaffected.
-- [ ] Recursive merge for criss-cross histories.
+- [x] Recursive merge for criss-cross histories. `dag::merge_bases` returns every best base. With several, they are merged into a virtual base (conflicts settled as ours) before the three-way merge. Covered by `tests/criss_cross.rs`.
 - [ ] Hierarchical trees for large models; packfiles / delta compression for the FS store.
 
 ### Tier 4: innovative

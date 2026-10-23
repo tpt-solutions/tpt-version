@@ -122,15 +122,33 @@ pub fn descendants<S: CasStore>(
 /// The best common ancestor of `a` and `b`, or `None` if their histories are unrelated.
 ///
 /// With several best bases (a criss-cross history), the newest by timestamp
-/// wins, ties broken by hash. Every peer therefore picks the same base.
-///
-/// The walk loads each reachable commit once, so the cost is linear in the
-/// size of the two histories.
+/// wins, ties broken by hash. Use [`merge_bases`] to get all of them.
 pub fn find_merge_base<S: CasStore>(
     store: &S,
     a: &ContentHash,
     b: &ContentHash,
 ) -> Result<Option<ContentHash>, RepoError> {
+    let mut best: Option<(u64, ContentHash)> = None;
+    for hash in merge_bases(store, a, b)? {
+        let timestamp = load_commit(store, &hash)?.timestamp;
+        if best.is_none_or(|current| (timestamp, hash) > current) {
+            best = Some((timestamp, hash));
+        }
+    }
+    Ok(best.map(|(_, hash)| hash))
+}
+
+/// Every best common ancestor of `a` and `b`, sorted by hash. One for an
+/// ordinary fork. More than one for a criss-cross history. Empty when the
+/// histories are unrelated.
+///
+/// The walk loads each reachable commit once, so the cost is linear in the
+/// size of the two histories.
+pub fn merge_bases<S: CasStore>(
+    store: &S,
+    a: &ContentHash,
+    b: &ContentHash,
+) -> Result<Vec<ContentHash>, RepoError> {
     let mut cache = CommitCache::default();
     let from_a: BTreeSet<ContentHash> =
         ancestors_cached(store, &mut cache, core::slice::from_ref(a))?
@@ -163,12 +181,10 @@ pub fn find_merge_base<S: CasStore>(
         }
     }
 
-    let mut best: Option<(u64, ContentHash)> = None;
-    for hash in common.into_iter().filter(|hash| !superseded.contains(hash)) {
-        let timestamp = cache.get(store, &hash)?.timestamp;
-        if best.is_none_or(|current| (timestamp, hash) > current) {
-            best = Some((timestamp, hash));
-        }
-    }
-    Ok(best.map(|(_, hash)| hash))
+    let mut bases: Vec<ContentHash> = common
+        .into_iter()
+        .filter(|hash| !superseded.contains(hash))
+        .collect();
+    bases.sort();
+    Ok(bases)
 }
