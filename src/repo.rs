@@ -12,6 +12,7 @@ use crate::dag;
 use crate::diff::{DiffEntry, diff_trees};
 use crate::entity::Entity;
 use crate::error::RepoError;
+use crate::history::{self, EntityVersion, FieldBlame};
 use crate::maintenance::{self, GcReport};
 use crate::merge::{self, MergeResult, Resolution};
 use crate::object::{ActorId, Commit, Conflict, ContentHash, EntityId, Object, Tree};
@@ -205,6 +206,26 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
             }
         }
         Ok(())
+    }
+
+    /// The changes in the working copy that a commit would record, compared
+    /// with the head. Empty when the working copy matches the head.
+    /// The commits on the current branch that changed `id`, newest first. Follows
+    /// the first parent of each commit.
+    pub fn entity_history(&self, id: &EntityId) -> Result<Vec<EntityVersion>, RepoError> {
+        match self.head {
+            Some(head) => history::entity_history(&self.store, head, id),
+            None => Ok(Vec::new()),
+        }
+    }
+
+    /// For each field of entity `id` at the head, the commit that set its
+    /// current value. Empty if the entity is absent from the head.
+    pub fn field_blame(&self, id: &EntityId) -> Result<Vec<FieldBlame>, RepoError> {
+        match self.head {
+            Some(head) => history::field_blame(&self.store, head, id),
+            None => Ok(Vec::new()),
+        }
     }
 
     /// The changes in the working copy that a commit would record, compared

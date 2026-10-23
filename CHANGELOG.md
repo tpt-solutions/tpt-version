@@ -25,6 +25,8 @@
   `file_store_cli`, `signed_history` and `s3_sync` examples.
 - `prelude` module. The README Quick Start is compiled as a doctest.
 - `docs/`: concepts, conflict cookbook, porting guide and FAQ.
+- `Repository::entity_history` and `Repository::field_blame`, which follow the
+  first-parent chain.
 - `TrustPolicy`: trusted signing keys, and branches that must be signed by one.
   Enforced on commit and on merge into a governed branch.
 - `Repository::diff_working` and the `Hooks` trait (`pre_commit` can refuse a
