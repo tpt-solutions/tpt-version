@@ -29,3 +29,8 @@ required-features = ["std"]
 name = "throughput"
 harness = false
 required-features = ["std"]
+
+[dev-dependencies]
+# Dev-only. Pinned to a revision, since the crate is not on crates.io.
+tpt-testkit = { git = "https://github.com/tpt-solutions/tpt-testkit", rev = "e77a90198eed4235224a49e3226fe2c1b9f2247b", default-features = false, features = ["golden", "property"] }
+proptest = "1"

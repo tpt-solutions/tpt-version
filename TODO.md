@@ -24,7 +24,7 @@ Source of truth: [spec.txt](spec.txt). Tick items as they are completed.
 - [x] Read tpt-uir, tpt-primitives, tpt-crypto sources to confirm type names. Results are in the Decisions section above.
 - [x] `Cargo.toml` (features, git deps, lints, license), `src/lib.rs` with `no_std` + `alloc`
 - [x] Module skeleton: object, store, dag, diff, merge, repo, error (plus codec, uir, sign, entity)
-- [~] README, LICENSE files, CI. README, both license files and `.github/workflows/ci.yml` (test matrix on Linux/macOS/Windows, clippy, fmt, WASM no_std check) are written. The CI workflow has not run on GitHub yet.
+- [x] README, LICENSE files, CI. README, both license files and `.github/workflows/ci.yml` (test matrix on Linux/macOS/Windows, clippy, fmt, WASM no_std check) are written, and the CI run on GitHub is green.
 - [x] Local `Entity` trait (tpt-model stand-in)
 
 ## Phase 1: Objects & CAS
@@ -78,7 +78,7 @@ Source of truth: [spec.txt](spec.txt). Tick items as they are completed.
 - [ ] v1.0.0 release prep. Not started. It needs the user's decision on the version and on publishing, since the git dependencies block crates.io. tpt-vertex integration happens in that repo.
 
 ## Testing & Quality (spec section 6)
-- [~] Golden tests: fixed entity → fixed hash. One pinned hash is in `tests/objects.rs`, and it is checked against a SHA-256 known-answer vector. It has not been run on macOS or Windows yet (CI matrix pending). This uses a plain test, not `tpt-testkit::golden`.
+- [x] Golden tests: `tests/golden.rs` pins the canonical bytes of an entity, tree and commit in `tests/fixtures/` via `tpt-testkit::golden::assert_bytes`. The CI matrix (Linux, macOS, Windows) checks them on every platform. `.gitattributes` forces LF in fixtures. The pinned hash in `tests/objects.rs` is kept as a SHA-256 known-answer check.
 - [x] Property tests: random three-way merges checked against an independent oracle (`tests/random_merges.rs`). Random commit histories through `Repository` (branch, commit, merge, resolve, then commit) are checked in `tests/random_histories.rs`. Both use a custom xorshift generator (`tests/common`), not `tpt-testkit::property`.
 - [x] Diff accuracy tests against known tree pairs
 - [~] Benchmarks: `benches/throughput.rs` (`cargo bench --bench throughput`, plain timers, no harness). Single run on this machine: commit 10,000 entities 22.8 ms; diff two 10,000-entity trees 28.8 ms; merge two divergent branches 33.6 ms. Not statistical, and not run in CI. Criterion or tpt-testkit::bench would give proper numbers.
@@ -86,5 +86,5 @@ Source of truth: [spec.txt](spec.txt). Tick items as they are completed.
 
 ## Open items to confirm later
 - [x] Exact tpt-uir value/node types after reading the repo. Resolved as a deviation: `UirNode` is defined locally (see Decisions).
-- [ ] Whether tpt-testkit is usable as a git dev-dependency (`publish = false`, placeholder repo URL). Not evaluated, because nothing needs it yet.
+- [x] tpt-testkit is a dev-dependency, pinned to `tpt-solutions/tpt-testkit` rev `e77a901` (features `golden`, `property`). Used for golden fixtures and proptest round-trips (`tests/golden.rs`, `tests/round_trip.rs`). It is not in the normal dependency graph. It requires Rust 1.97, the pinned toolchain here. `bench` is not enabled, see the benchmarks item.
 - [x] **Upstream bug in `tpt-crypto-sig` (fixed).** `VerifyingKey::verify` accepted small-order public keys, so an all-zero key and signature verified for any message. The fix is on `tpt-solutions/tpt-crypto` master as `8b73d9b`. This crate pins that revision in `Cargo.lock`, and the local workaround in `sign::verify` has been removed. `tests/history.rs` covers the forgery case.
