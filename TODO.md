@@ -74,7 +74,7 @@ Source of truth: [spec.txt](spec.txt). Tick items as they are completed.
 - [x] Decide whether the signature is part of the commit hash. Decision: it is, and the decision is documented on `Commit`.
 - [x] `S3Store` behind `s3` feature (client trait, std only), tested with an in-memory fake
 - [x] Integration example: CAD-like entity set with branch / edit / merge (`examples/cad_branch_merge.rs`)
-- [~] API docs, CHANGELOG, crate metadata. CHANGELOG and crate metadata are done, and `cargo doc` builds with `-D warnings`. Per-item docs are not complete.
+- [x] API docs, CHANGELOG, crate metadata. CHANGELOG and crate metadata are done, `cargo doc` builds with `-D warnings`, and every public item is documented (`#![warn(missing_docs)]`, enforced by clippy in CI).
 - [ ] v1.0.0 release prep. Not started. It needs the user's decision on the version and on publishing, since the git dependencies block crates.io. tpt-vertex integration happens in that repo.
 
 ## Testing & Quality (spec section 6)
