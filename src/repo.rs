@@ -9,6 +9,7 @@ use alloc::vec::Vec;
 use core::cell::Cell;
 
 use crate::dag;
+use crate::diff::{DiffEntry, diff_trees};
 use crate::entity::Entity;
 use crate::error::RepoError;
 use crate::maintenance::{self, GcReport};
@@ -100,6 +101,22 @@ fn is_windows_device_name(part: &str) -> bool {
             && stem.as_bytes()[3] != b'0')
 }
 
+/// Callbacks around commits and merges. Both methods do nothing by default, so
+/// an implementation overrides only what it needs.
+pub trait Hooks {
+    /// Runs before a commit is written, with the changes it would record. An
+    /// error refuses the commit and is returned as [`RepoError::HookRejected`].
+    fn pre_commit(&mut self, changes: &[DiffEntry]) -> Result<(), String> {
+        let _ = changes;
+        Ok(())
+    }
+
+    /// Runs after a merge of `branch` has been applied to the working copy.
+    fn post_merge(&mut self, branch: &str, result: &MergeResult) {
+        let _ = (branch, result);
+    }
+}
+
 /// A versioned collection of entities.
 ///
 /// Edits go to a staged working copy. [`Repository::commit`] snapshots it into
@@ -114,6 +131,7 @@ pub struct Repository<S, C> {
     branch: Option<String>,
     merge_parents: Vec<ContentHash>,
     conflicts: Vec<Conflict>,
+    hooks: Option<Box<dyn Hooks>>,
 }
 
 impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
@@ -141,6 +159,7 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
             branch: Some(branch.into()),
             merge_parents: Vec::new(),
             conflicts: Vec::new(),
+            hooks: None,
         })
     }
 
@@ -148,6 +167,24 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
     pub fn with_signer(mut self, signer: Box<dyn Signer>) -> Self {
         self.signer = Some(signer);
         self
+    }
+
+    /// Installs hooks that run around every commit and merge from now on.
+    pub fn with_hooks(mut self, hooks: Box<dyn Hooks>) -> Self {
+        self.hooks = Some(hooks);
+        self
+    }
+
+    /// The changes in the working copy that a commit would record, compared
+    /// with the head. Empty when the working copy matches the head.
+    pub fn diff_working(&self) -> Result<Vec<DiffEntry>, RepoError> {
+        let old = Tree {
+            entries: self.head_entries()?,
+        };
+        let new = Tree {
+            entries: self.staged.clone(),
+        };
+        diff_trees(&self.store, &old, &new)
     }
 
     /// The underlying store, for reading objects directly.
@@ -211,6 +248,14 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
     pub fn commit(&mut self, message: &str, author: &ActorId) -> Result<ContentHash, RepoError> {
         if !self.conflicts.is_empty() {
             return Err(RepoError::UnresolvedConflicts(self.conflicts.len()));
+        }
+        if self.hooks.is_some() {
+            let changes = self.diff_working()?;
+            if let Some(hooks) = self.hooks.as_mut() {
+                hooks
+                    .pre_commit(&changes)
+                    .map_err(RepoError::HookRejected)?;
+            }
         }
         let tree_hash = store_object(
             &mut self.store,
@@ -321,6 +366,14 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
     /// result. The merge is recorded by the next [`Repository::commit`], and
     /// that commit is refused while conflicts remain.
     pub fn merge(&mut self, branch: &str) -> Result<MergeResult, RepoError> {
+        let result = self.merge_branch(branch)?;
+        if let Some(hooks) = self.hooks.as_mut() {
+            hooks.post_merge(branch, &result);
+        }
+        Ok(result)
+    }
+
+    fn merge_branch(&mut self, branch: &str) -> Result<MergeResult, RepoError> {
         self.ensure_clean()?;
         let theirs = self
             .resolve_branch(branch)?

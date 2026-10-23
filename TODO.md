@@ -114,7 +114,7 @@ Plan: see the review notes. Tier 1 and Tier 2 come first.
 - [ ] Release prep: publishable dependencies (tpt-crypto, tpt-testkit) so `cargo add tpt-version` works.
 
 ### Tier 3: missing features
-- [ ] `status`, `diff_working`, `reset`, `amend`, `revert`, `cherry_pick`.
+- [~] `status`, `diff_working`, `reset`, `amend`, `revert`, `cherry_pick`. `diff_working` is done. `status`, `reset`, `amend`, `revert` and `cherry_pick` are still open.
 - [ ] Tags (immutable refs), optionally signed.
 - [ ] Per-entity `history` and field-level `blame`.
 - [x] `fsck` (verify objects, signatures, refs) and `gc` (reachability). `maintenance::fsck` collects every problem; `Repository::gc` roots on refs, HEAD, the working copy and any pending merge, and refuses to delete if a reachable object is missing. S3 does not implement `PruneStore` yet, so gc is FS and memory only.
@@ -138,4 +138,4 @@ Plan: see the review notes. Tier 1 and Tier 2 come first.
 - [ ] `cargo-fuzz` targets for `Object::decode` and `merge_trees`.
 - [ ] Release automation (`release-plz` / `cargo-release`) and Dependabot for the pinned git revs.
 - [~] Error messages that suggest the next action; `#[non_exhaustive]` on error enums is done.
-- [ ] `pre_commit` / `post_merge` hook traits.
+- [x] `pre_commit` / `post_merge` hook traits. `Hooks` on `Repository::with_hooks`; a refused `pre_commit` returns `RepoError::HookRejected`.

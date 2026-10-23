@@ -88,6 +88,8 @@ pub enum RepoError {
     /// The entity's stored form loads back under a different id than the one
     /// it was staged with.
     IdMismatch(EntityId),
+    /// A `pre_commit` hook refused the commit, with its reason.
+    HookRejected(String),
 }
 
 /// Merge failures are reported as [`RepoError`] variants.
@@ -161,6 +163,7 @@ impl fmt::Display for RepoError {
             Self::InvalidSignature(hash) => write!(f, "commit {hash} has an invalid signature"),
             Self::RefMoved(name) => write!(f, "branch {name:?} moved since it was read"),
             Self::IdMismatch(id) => write!(f, "entity {id} does not load back under its own id"),
+            Self::HookRejected(reason) => write!(f, "commit refused by a hook: {reason}"),
         }
     }
 }
