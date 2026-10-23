@@ -67,6 +67,14 @@ impl Clock for SystemClock {
     }
 }
 
+/// Refs under this prefix are tags. Branch names may not start with it.
+const TAG_PREFIX: &str = "tags/";
+
+/// The ref that holds tag `name`.
+fn tag_ref(name: &str) -> String {
+    alloc::format!("{TAG_PREFIX}{name}")
+}
+
 /// Checks a branch name: ASCII letters, digits, `.`, `_`, `-` and `/`, with no
 /// empty, leading, trailing or doubled separators. Each `/`-separated part must
 /// also be usable as a file name on every supported platform: it may not end
@@ -74,6 +82,7 @@ impl Clock for SystemClock {
 pub fn validate_branch_name(name: &str) -> Result<(), RepoError> {
     let valid = !name.is_empty()
         && name.len() <= 200
+        && !name.starts_with(TAG_PREFIX)
         && !name.starts_with(['/', '.', '-'])
         && !name.ends_with(['/', '.'])
         && !name.contains("..")
@@ -117,6 +126,21 @@ pub trait Hooks {
     fn post_merge(&mut self, branch: &str, result: &MergeResult) {
         let _ = (branch, result);
     }
+}
+
+/// A snapshot of the working copy, from [`Repository::status`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct Status {
+    /// The checked-out branch, or `None` when detached.
+    pub branch: Option<String>,
+    /// The commit the working copy is based on.
+    pub head: Option<ContentHash>,
+    /// Changes a commit would record.
+    pub changes: Vec<DiffEntry>,
+    /// Entities with an unresolved merge conflict.
+    pub conflicts: Vec<EntityId>,
+    /// Whether a merge is staged and waiting for its commit.
+    pub merging: bool,
 }
 
 /// A versioned collection of entities.
@@ -226,6 +250,22 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
             Some(head) => history::field_blame(&self.store, head, id),
             None => Ok(Vec::new()),
         }
+    }
+
+    /// A summary of the working copy: where it is, what would be committed, and
+    /// what still blocks a commit.
+    pub fn status(&self) -> Result<Status, RepoError> {
+        Ok(Status {
+            branch: self.branch.clone(),
+            head: self.head,
+            changes: self.diff_working()?,
+            conflicts: self
+                .conflicts
+                .iter()
+                .map(|conflict| conflict.entity)
+                .collect(),
+            merging: !self.merge_parents.is_empty(),
+        })
     }
 
     /// The changes in the working copy that a commit would record, compared
@@ -371,9 +411,56 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
         Ok(self.store.read_ref(name)?)
     }
 
-    /// All branch names, sorted.
+    /// All branch names, sorted. Tags are not branches and are not listed.
     pub fn list_branches(&self) -> Result<Vec<String>, RepoError> {
-        Ok(self.store.list_refs()?)
+        Ok(self
+            .store
+            .list_refs()?
+            .into_iter()
+            .filter(|name| !name.starts_with(TAG_PREFIX))
+            .collect())
+    }
+
+    /// Creates an immutable tag pointing at `commit`. A tag name follows the
+    /// branch name rules. Tags are never moved by a commit.
+    pub fn create_tag(&mut self, name: &str, commit: ContentHash) -> Result<(), RepoError> {
+        validate_branch_name(name)?;
+        let reference = tag_ref(name);
+        if self.store.read_ref(&reference)?.is_some() {
+            return Err(RepoError::TagExists(name.into()));
+        }
+        ensure_no_name_clash(&self.store, &reference)?;
+        dag::load_commit(&self.store, &commit)?;
+        if !self.store.compare_and_swap_ref(&reference, None, commit)? {
+            return Err(RepoError::TagExists(name.into()));
+        }
+        Ok(())
+    }
+
+    /// The commit a tag points at, or `None` if there is no such tag.
+    pub fn resolve_tag(&self, name: &str) -> Result<Option<ContentHash>, RepoError> {
+        validate_branch_name(name)?;
+        Ok(self.store.read_ref(&tag_ref(name))?)
+    }
+
+    /// All tag names, sorted.
+    pub fn list_tags(&self) -> Result<Vec<String>, RepoError> {
+        Ok(self
+            .store
+            .list_refs()?
+            .into_iter()
+            .filter_map(|name| name.strip_prefix(TAG_PREFIX).map(String::from))
+            .collect())
+    }
+
+    /// Deletes a tag. Deleting is the only way to change a tag's target.
+    pub fn delete_tag(&mut self, name: &str) -> Result<(), RepoError> {
+        validate_branch_name(name)?;
+        if self.store.delete_ref(&tag_ref(name))? {
+            Ok(())
+        } else {
+            Err(RepoError::TagNotFound(name.into()))
+        }
     }
 
     /// Deletes a branch. The checked-out branch cannot be deleted.

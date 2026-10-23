@@ -90,6 +90,10 @@ pub enum RepoError {
     IdMismatch(EntityId),
     /// A `pre_commit` hook refused the commit, with its reason.
     HookRejected(String),
+    /// A tag with this name already exists. Tags are immutable.
+    TagExists(String),
+    /// No tag with this name exists.
+    TagNotFound(String),
     /// The branch is governed by a trust policy, and a commit that would land on
     /// it, or be merged into it, is not signed by a trusted key.
     Untrusted(String),
@@ -167,6 +171,8 @@ impl fmt::Display for RepoError {
             Self::RefMoved(name) => write!(f, "branch {name:?} moved since it was read"),
             Self::IdMismatch(id) => write!(f, "entity {id} does not load back under its own id"),
             Self::HookRejected(reason) => write!(f, "commit refused by a hook: {reason}"),
+            Self::TagExists(name) => write!(f, "tag {name:?} already exists"),
+            Self::TagNotFound(name) => write!(f, "tag {name:?} not found"),
             Self::Untrusted(branch) => {
                 write!(
                     f,

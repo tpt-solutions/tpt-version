@@ -114,8 +114,8 @@ Plan: see the review notes. Tier 1 and Tier 2 come first.
 - [ ] Release prep: publishable dependencies (tpt-crypto, tpt-testkit) so `cargo add tpt-version` works.
 
 ### Tier 3: missing features
-- [~] `status`, `diff_working`, `reset`, `amend`, `revert`, `cherry_pick`. `diff_working` is done. `status`, `reset`, `amend`, `revert` and `cherry_pick` are still open.
-- [ ] Tags (immutable refs), optionally signed.
+- [~] `status`, `diff_working`, `reset`, `amend`, `revert`, `cherry_pick`. `status` and `diff_working` are done. `reset`, `amend`, `revert` and `cherry_pick` are still open.
+- [~] Tags (immutable refs). `create_tag`, `resolve_tag`, `list_tags` and `delete_tag` are done, and tags live under the reserved `tags/` ref prefix. Tags are not signed yet.
 - [x] Per-entity `history` and field-level `blame`: `Repository::entity_history` and `Repository::field_blame`, along the first-parent chain from the head.
 - [x] `fsck` (verify objects, signatures, refs) and `gc` (reachability). `maintenance::fsck` collects every problem; `Repository::gc` roots on refs, HEAD, the working copy and any pending merge, and refuses to delete if a reachable object is missing. S3 does not implement `PruneStore` yet, so gc is FS and memory only.
 - [ ] `fetch` / `push` sync between stores, with a `Remote` abstraction.

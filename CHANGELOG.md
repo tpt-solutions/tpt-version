@@ -25,6 +25,8 @@
   `file_store_cli`, `signed_history` and `s3_sync` examples.
 - `prelude` module. The README Quick Start is compiled as a doctest.
 - `docs/`: concepts, conflict cookbook, porting guide and FAQ.
+- Tags: `create_tag`, `resolve_tag`, `list_tags`, `delete_tag`, under `tags/`.
+  Branch names may not start with `tags/`. `Repository::status`.
 - `Repository::entity_history` and `Repository::field_blame`, which follow the
   first-parent chain.
 - `TrustPolicy`: trusted signing keys, and branches that must be signed by one.
