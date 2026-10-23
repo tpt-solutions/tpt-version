@@ -32,7 +32,8 @@
 - `export::diff_to_json` and `export::node_json`: JSON for diffs and values.
 - `app_template` example: a derived entity, a workspace type, and a merge UI trait.
 - `MergePolicy` and `FieldStrategy` (`Sum`, `Max`, `Min`): numeric fields changed
-  on both sides merge by strategy instead of conflicting.
+  on both sides merge by strategy instead of conflicting. `ListStrategy::Union`
+  treats a list as a set, and a removal on either side wins.
 - `#[derive(Entity)]` (default `derive` feature). Field types implement the new
   `UirValue` trait, which covers the scalars, `EntityId`, `Option`, `Vec` and arrays.
 - History editing: `amend`, `reset_hard`, `revert` and `cherry_pick`. Revert and

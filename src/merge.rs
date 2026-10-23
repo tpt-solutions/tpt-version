@@ -53,6 +53,17 @@ pub enum FieldStrategy {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MergePolicy {
     strategies: BTreeMap<Vec<String>, FieldStrategy>,
+    lists: BTreeMap<Vec<String>, ListStrategy>,
+}
+
+/// How a list field whose two sides both changed is combined. Without one, the
+/// whole list is a conflict.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ListStrategy {
+    /// Treats the list as a set. Items added on either side are kept. An item
+    /// that was in the base is dropped if either side removed it. Items keep
+    /// the order of ours, then theirs, without duplicates.
+    Union,
 }
 
 impl MergePolicy {
@@ -68,9 +79,33 @@ impl MergePolicy {
         self
     }
 
+    /// Gives the list at `path` a strategy.
+    pub fn list(mut self, path: &[&str], strategy: ListStrategy) -> Self {
+        let path = path.iter().map(|part| String::from(*part)).collect();
+        self.lists.insert(path, strategy);
+        self
+    }
+
     fn strategy_at(&self, path: &[String]) -> Option<FieldStrategy> {
         self.strategies.get(path).copied()
     }
+
+    fn list_strategy_at(&self, path: &[String]) -> Option<ListStrategy> {
+        self.lists.get(path).copied()
+    }
+}
+
+/// The set union described on [`ListStrategy::Union`].
+fn union(base: &[UirNode], ours: &[UirNode], theirs: &[UirNode]) -> Vec<UirNode> {
+    let mut merged: Vec<UirNode> = Vec::new();
+    for item in ours.iter().chain(theirs) {
+        // An item from the base survives only if both sides still have it.
+        let removed = base.contains(item) && !(ours.contains(item) && theirs.contains(item));
+        if !removed && !merged.contains(item) {
+            merged.push(item.clone());
+        }
+    }
+    merged
 }
 
 /// Combines two changes to one numeric field. Returns `None` when the values are
@@ -258,6 +293,21 @@ fn merge_node(
         && let Some(combined) = combine(strategy, base, our_value, their_value)
     {
         return Some(combined);
+    }
+    if let (
+        Some(ListStrategy::Union),
+        Some(UirNode::List(our_items)),
+        Some(UirNode::List(their_items)),
+    ) = (policy.list_strategy_at(path.as_slice()), ours, theirs)
+    {
+        let base_items: Option<&[UirNode]> = match base {
+            None => Some(&[]),
+            Some(UirNode::List(items)) => Some(items),
+            Some(_) => None,
+        };
+        if let Some(base_items) = base_items {
+            return Some(UirNode::List(union(base_items, our_items, their_items)));
+        }
     }
     if let (Some(UirNode::Map(our_map)), Some(UirNode::Map(their_map))) = (ours, theirs) {
         let empty = BTreeMap::new();

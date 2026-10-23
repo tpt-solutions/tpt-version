@@ -1,7 +1,8 @@
-//! Per-field merge strategies: numeric fields that both sides changed can be
-//! summed or clamped instead of conflicting, while other fields still conflict.
+//! Per-field merge strategies. Numeric fields that both sides changed can be
+//! summed or clamped, and set-like lists can be unioned, instead of conflicting.
+//! Fields without a strategy still conflict.
 
-use tpt_version::merge::{FieldStrategy, MergePolicy};
+use tpt_version::merge::{FieldStrategy, ListStrategy, MergePolicy};
 use tpt_version::prelude::*;
 
 #[derive(Entity, Debug, Clone, PartialEq)]
@@ -94,4 +95,60 @@ fn min_keeps_the_smaller_value() {
         .iter()
         .any(|field| field.path == ["peak"]);
     assert!(!peak_in_result, "peak is combined, not conflicted");
+}
+
+#[derive(Entity, Debug, Clone, PartialEq)]
+struct Tagged {
+    #[entity(id)]
+    id: EntityId,
+    tags: Vec<String>,
+}
+
+fn tagged(tags: &[&str]) -> Tagged {
+    Tagged {
+        id: EntityId::from_bytes([2; 16]),
+        tags: tags.iter().map(|tag| (*tag).into()).collect(),
+    }
+}
+
+/// Main drops `a` and adds `c`. The side keeps `a` and adds `d`.
+fn tag_branches(policy: MergePolicy) -> Repository<MemoryStore, LogicalClock> {
+    let mut repo = Repository::open(MemoryStore::default(), LogicalClock::starting_at(1), "main")
+        .unwrap()
+        .with_merge_policy(policy);
+    repo.put_entity(&tagged(&["a", "b"])).unwrap();
+    let base = repo.commit("base", &author()).unwrap();
+    repo.branch("side", base).unwrap();
+
+    repo.put_entity(&tagged(&["b", "c"])).unwrap();
+    repo.commit("main tags", &author()).unwrap();
+
+    repo.switch_branch("side").unwrap();
+    repo.put_entity(&tagged(&["a", "b", "d"])).unwrap();
+    repo.commit("side tags", &author()).unwrap();
+    repo.switch_branch("main").unwrap();
+    repo
+}
+
+#[test]
+fn union_keeps_additions_and_lets_a_removal_win() {
+    let policy = MergePolicy::new().list(&["tags"], ListStrategy::Union);
+    let mut repo = tag_branches(policy);
+
+    let result = repo.merge("side").unwrap();
+    assert!(result.conflicts.is_empty());
+    repo.commit("merge side", &author()).unwrap();
+    let merged: Tagged = repo
+        .entity(&EntityId::from_bytes([2; 16]))
+        .unwrap()
+        .unwrap();
+    assert_eq!(merged.tags, ["b", "c", "d"]);
+}
+
+#[test]
+fn without_a_list_strategy_the_list_conflicts() {
+    let mut repo = tag_branches(MergePolicy::new());
+    let result = repo.merge("side").unwrap();
+    assert_eq!(result.conflicts.len(), 1);
+    assert_eq!(result.conflicts[0].fields[0].path, ["tags"]);
 }
