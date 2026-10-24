@@ -176,6 +176,9 @@ pub struct Status {
     pub conflicts: Vec<EntityId>,
     /// Whether a merge is staged and waiting for its commit.
     pub merging: bool,
+    /// Whether a merge, revert or cherry-pick is staged and waiting for its
+    /// commit.
+    pub staged: bool,
 }
 
 /// A versioned collection of entities.
@@ -192,6 +195,7 @@ pub struct Repository<S, C> {
     branch: Option<String>,
     merge_parents: Vec<ContentHash>,
     conflicts: Vec<Conflict>,
+    staging: bool,
     hooks: Option<Box<dyn Hooks>>,
     trust: Option<TrustPolicy>,
     validators: Vec<Box<dyn Validator>>,
@@ -219,12 +223,12 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
         let (tree_ref, theirs_ref) = merge_refs(branch);
         let mut merge_parents = Vec::new();
         let mut conflicts = Vec::new();
-        if let (Some(tree), Some(theirs)) =
-            (store.read_ref(&tree_ref)?, store.read_ref(&theirs_ref)?)
-        {
+        let mut staging = false;
+        if let Some(tree) = store.read_ref(&tree_ref)? {
             staged = load_tree(&store, &tree)?.entries;
             conflicts = conflicts_in(&store, &staged)?;
-            merge_parents = vec![theirs];
+            merge_parents = store.read_ref(&theirs_ref)?.into_iter().collect();
+            staging = true;
         }
         Ok(Self {
             store,
@@ -235,6 +239,7 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
             branch: Some(branch.into()),
             merge_parents,
             conflicts,
+            staging,
             hooks: None,
             trust: None,
             validators: Vec::new(),
@@ -360,6 +365,7 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
                 .map(|conflict| conflict.entity)
                 .collect(),
             merging: !self.merge_parents.is_empty(),
+            staged: self.staged_change(),
         })
     }
 
@@ -503,7 +509,7 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
     /// the head's parents. The old head stays in the store until [`Repository::gc`]
     /// removes it. Refused while a merge is staged.
     pub fn amend(&mut self, message: &str, author: &ActorId) -> Result<ContentHash, RepoError> {
-        if !self.merge_parents.is_empty() {
+        if self.staged_change() {
             return Err(RepoError::MergeInProgress);
         }
         let head = self.head.ok_or(RepoError::NothingToAmend)?;
@@ -560,8 +566,9 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
             self.advance_branch(&name, self.head, hash)?;
         }
         self.head = Some(hash);
-        if !self.merge_parents.is_empty() {
+        if self.staged_change() {
             self.merge_parents.clear();
+            self.staging = false;
             self.clear_merge_state()?;
         }
         Ok(hash)
@@ -776,6 +783,7 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
         dag::load_commit(&self.store, &commit)?;
         self.move_to(commit)?;
         self.conflicts.clear();
+        self.staging = false;
         self.clear_merge_state()
     }
 
@@ -900,6 +908,8 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
         let result = merge::merge_trees_with(&mut self.store, base, ours, theirs, &policy)?;
         self.staged = load_tree(&self.store, &result.merged_tree)?.entries;
         self.conflicts = result.conflicts.clone();
+        self.staging = true;
+        self.save_merge_state()?;
         Ok(result)
     }
 
@@ -995,13 +1005,18 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
     /// [`Repository::open`] on that branch resumes it. A detached merge is not
     /// saved, since there is no branch to key it by.
     fn save_merge_state(&mut self) -> Result<(), RepoError> {
-        let (Some(branch), Some(theirs)) = (self.branch.clone(), self.merge_parents.first()) else {
+        let Some(branch) = self.branch.clone() else {
             return Ok(());
         };
         let tree = store_tree(&mut self.store, self.staged.clone())?;
         let (tree_ref, theirs_ref) = merge_refs(&branch);
         self.store.write_ref(&tree_ref, tree)?;
-        self.store.write_ref(&theirs_ref, *theirs)?;
+        match self.merge_parents.first() {
+            Some(theirs) => self.store.write_ref(&theirs_ref, *theirs)?,
+            None => {
+                self.store.delete_ref(&theirs_ref)?;
+            }
+        }
         Ok(())
     }
 
@@ -1081,11 +1096,16 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
     }
 
     /// Refuses operations that would discard uncommitted work or a pending merge.
+    /// Whether a merge, revert or cherry-pick is staged and waiting for its commit.
+    fn staged_change(&self) -> bool {
+        self.staging || !self.merge_parents.is_empty()
+    }
+
     fn ensure_clean(&self) -> Result<(), RepoError> {
         if !self.conflicts.is_empty() {
             return Err(RepoError::UnresolvedConflicts(self.conflicts.len()));
         }
-        if !self.merge_parents.is_empty() || self.staged != self.head_entries()? {
+        if self.staged_change() || self.staged != self.head_entries()? {
             return Err(RepoError::DirtyWorkingCopy);
         }
         Ok(())

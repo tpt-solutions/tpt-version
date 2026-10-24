@@ -115,3 +115,35 @@ fn prefer_flag_settles_every_conflict_in_one_run() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_conflicted_revert_survives_between_runs() {
+    let dir = std::env::temp_dir().join(format!("tpt-cli-revert-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let hash_of = |output: &Output| stdout(output).trim().to_string();
+
+    assert!(tpt(&dir, &["init"]).status.success());
+    assert!(tpt(&dir, &["commit", "one", "a=1"]).status.success());
+    let two = hash_of(&tpt(&dir, &["commit", "two", "a=2"]));
+    assert!(tpt(&dir, &["commit", "three", "a=3"]).status.success());
+
+    // Reverting "two" on top of "three" changes a, which "three" also changed.
+    let revert = tpt(&dir, &["revert", &two]);
+    assert!(
+        revert.status.success(),
+        "{}",
+        String::from_utf8_lossy(&revert.stderr)
+    );
+    assert!(stdout(&revert).contains("staged with 1 conflict(s)"));
+    assert!(!tpt(&dir, &["commit", "too soon", "b=2"]).status.success());
+
+    let listed = stdout(&tpt(&dir, &["conflicts"]));
+    assert!(listed.contains("a: ours \"3\" | theirs \"1\""), "{listed}");
+
+    assert!(tpt(&dir, &["resolve", "a", "theirs"]).status.success());
+    assert!(tpt(&dir, &["finish-merge", "revert two"]).status.success());
+    assert_eq!(stdout(&tpt(&dir, &["get", "a"])), "1\n");
+    assert!(!tpt(&dir, &["finish-merge", "again"]).status.success());
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

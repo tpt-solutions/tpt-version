@@ -77,6 +77,9 @@
   snapshot, so it can check rules that span entities. Commits are refused while
   one reports a problem (`RepoError::ValidationFailed`). `Repository::validate`
   runs them on demand.
+- A staged revert or cherry-pick is saved the same way, so it survives between
+  runs. `Status::staged` reports any staged change. `tpt revert`, `tpt
+  cherry-pick` and `tpt finish-merge` use it.
 - `tpt conflicts`, `tpt resolve <key> ours|theirs` and `tpt finish-merge`, which
   settle a conflicted merge over several runs. `tpt merge <branch> <message>`
   leaves conflicts pending, where `merge <branch> ours|theirs <message>` settles

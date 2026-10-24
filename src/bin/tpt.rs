@@ -10,6 +10,8 @@
 //! tpt [--dir DIR] switch <name>                       check out a branch
 //! tpt [--dir DIR] merge <branch> <message>            merge; conflicts stay pending
 //! tpt [--dir DIR] merge <branch> <ours|theirs> <message>
+//! tpt [--dir DIR] revert <rev>                         stage the inverse of a commit
+//! tpt [--dir DIR] cherry-pick <rev>                     stage a commit's change on the head
 //! tpt [--dir DIR] conflicts                           list the pending conflicts
 //! tpt [--dir DIR] resolve <key> <ours|theirs>         settle one pending conflict
 //! tpt [--dir DIR] finish-merge <message>              commit a merge once none remain
@@ -64,7 +66,7 @@ fn entry(key: &str, value: &str) -> Entry {
 
 fn usage() -> ExitCode {
     eprintln!(
-        "usage: tpt [--dir DIR] <commit|get|list|log|branch|branches|switch|merge|conflicts|resolve|finish-merge|tag|tags|fsck|gc> ..."
+        "usage: tpt [--dir DIR] <commit|get|list|log|branch|branches|switch|merge|revert|cherry-pick|conflicts|resolve|finish-merge|tag|tags|fsck|gc> ..."
     );
     ExitCode::FAILURE
 }
@@ -195,9 +197,21 @@ fn run(mut args: Vec<String>) -> Result<ExitCode, Failure> {
             repo.resolve_conflict(&id, resolution)?;
             println!("resolved {key:?} with {prefer}");
         }
+        ("revert", [rev]) => {
+            let commit = resolve(&repo, rev)?;
+            repo.revert(commit)?;
+            report_staged(&repo)?;
+        }
+        ("cherry-pick", [rev]) => {
+            let commit = resolve(&repo, rev)?;
+            repo.cherry_pick(commit)?;
+            report_staged(&repo)?;
+        }
         ("finish-merge", [message]) => {
-            if !repo.status()?.merging {
-                return Err("no merge is pending; start one with merge <branch> <message>".into());
+            if !repo.status()?.staged {
+                return Err(
+                    "nothing is staged; start one with merge, revert or cherry-pick".into(),
+                );
             }
             let hash = repo.commit(message, &author)?;
             println!("{hash}");
@@ -300,6 +314,19 @@ fn merge_into_head(
     } else {
         let hash = repo.commit(message, author)?;
         println!("{hash}");
+    }
+    Ok(())
+}
+
+/// Says what a revert or cherry-pick left staged, and the next step.
+fn report_staged(repo: &Repository<FileSystemStore, SystemClock>) -> Result<(), Failure> {
+    let conflicts = repo.status()?.conflicts.len();
+    if conflicts == 0 {
+        println!("staged; run finish-merge <message> to commit it");
+    } else {
+        println!(
+            "staged with {conflicts} conflict(s); run conflicts, then resolve <key> ours|theirs for each, then finish-merge <message>"
+        );
     }
     Ok(())
 }
