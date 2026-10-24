@@ -24,6 +24,7 @@ const TAG_COMMIT: u8 = 4;
 const TAG_CONFLICT: u8 = 5;
 const TAG_REVIEW: u8 = 6;
 const TAG_TREE_ROOT: u8 = 7;
+const TAG_ANNOTATED_TAG: u8 = 8;
 
 fn write_hex(f: &mut fmt::Formatter<'_>, bytes: &[u8]) -> fmt::Result {
     for byte in bytes {
@@ -214,6 +215,8 @@ pub enum Object {
     Conflict(Conflict),
     /// A signed verdict on a commit.
     Review(Review),
+    /// An annotated, optionally signed tag. See [`AnnotatedTag`].
+    AnnotatedTag(AnnotatedTag),
 }
 
 impl Object {
@@ -227,6 +230,7 @@ impl Object {
             Self::Commit(_) => "commit",
             Self::Conflict(_) => "conflict",
             Self::Review(_) => "review",
+            Self::AnnotatedTag(_) => "annotated tag",
         }
     }
 
@@ -256,6 +260,7 @@ impl Object {
             Self::Commit(commit) => encode_commit(commit, true),
             Self::Conflict(conflict) => encode_conflict(conflict),
             Self::Review(review) => encode_review(review, true),
+            Self::AnnotatedTag(tag) => encode_annotated_tag(tag, true),
         }
     }
 
@@ -270,6 +275,7 @@ impl Object {
             TAG_COMMIT => Self::Commit(decode_commit(&mut r)?),
             TAG_CONFLICT => Self::Conflict(decode_conflict(&mut r)?),
             TAG_REVIEW => Self::Review(decode_review(&mut r)?),
+            TAG_ANNOTATED_TAG => Self::AnnotatedTag(decode_annotated_tag(&mut r)?),
             other => return Err(ObjectError::UnknownTag(other)),
         };
         r.finish()?;
@@ -391,6 +397,82 @@ fn decode_review(r: &mut Reader<'_>) -> Result<Review, ObjectError> {
         author,
         timestamp,
         note,
+        signature,
+    })
+}
+
+/// An annotated tag: a name, a message and a signed reference to a commit. It is
+/// stored in the CAS, and its ref under `tags/` points here instead of at the
+/// commit itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AnnotatedTag {
+    /// The commit being tagged.
+    pub commit: ContentHash,
+    /// The tag's name, as it appears in its ref.
+    pub name: String,
+    /// Who created the tag. As with [`Commit::author`], a label, not proof.
+    pub author: ActorId,
+    /// When the tag was created, from the repository's clock.
+    pub timestamp: u64,
+    /// The tag's message.
+    pub message: String,
+    /// The creator's signature over [`AnnotatedTag::signing_bytes`].
+    pub signature: Option<Signature>,
+}
+
+impl AnnotatedTag {
+    /// The bytes the signature covers: the tag encoded without its signature.
+    pub fn signing_bytes(&self) -> Vec<u8> {
+        encode_annotated_tag(self, false)
+    }
+
+    /// Whether the signature is present and verifies against the tag's contents.
+    /// It says nothing about whether the signer is trusted.
+    pub fn is_valid(&self) -> bool {
+        self.signature
+            .as_ref()
+            .is_some_and(|signature| crate::sign::verify(signature, &self.signing_bytes()))
+    }
+}
+
+fn encode_annotated_tag(tag: &AnnotatedTag, with_signature: bool) -> Vec<u8> {
+    let mut w = Writer::new(TAG_ANNOTATED_TAG);
+    w.fixed(tag.commit.as_bytes());
+    w.str(&tag.name);
+    w.fixed(tag.author.as_bytes());
+    w.u64(tag.timestamp);
+    w.str(&tag.message);
+    match (&tag.signature, with_signature) {
+        (Some(signature), true) => {
+            w.u8(1);
+            w.fixed(&signature.signer);
+            w.fixed(&signature.bytes);
+        }
+        _ => w.u8(0),
+    }
+    w.finish()
+}
+
+fn decode_annotated_tag(r: &mut Reader<'_>) -> Result<AnnotatedTag, ObjectError> {
+    let commit = r.hash()?;
+    let name = r.str()?;
+    let author = ActorId::from_bytes(r.fixed()?);
+    let timestamp = r.u64()?;
+    let message = r.str()?;
+    let signature = match r.u8()? {
+        0 => None,
+        1 => Some(Signature {
+            signer: r.fixed()?,
+            bytes: r.fixed()?,
+        }),
+        _ => return Err(ObjectError::InvalidValue("signature flag")),
+    };
+    Ok(AnnotatedTag {
+        commit,
+        name,
+        author,
+        timestamp,
+        message,
         signature,
     })
 }

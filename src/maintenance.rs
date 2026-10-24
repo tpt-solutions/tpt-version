@@ -22,6 +22,7 @@ pub(crate) fn children(object: &Object) -> Vec<ContentHash> {
             hashes
         }
         Object::Review(review) => alloc::vec![review.commit],
+        Object::AnnotatedTag(tag) => alloc::vec![tag.commit],
         Object::Conflict(conflict) => [conflict.base, conflict.ours, conflict.theirs]
             .into_iter()
             .flatten()

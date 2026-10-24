@@ -16,7 +16,8 @@ use crate::history::{self, EntityVersion, FieldBlame};
 use crate::maintenance::{self, GcReport};
 use crate::merge::{self, MergePolicy, MergeResult, Resolution, Side};
 use crate::object::{
-    ActorId, Commit, Conflict, ContentHash, EntityId, Object, Review, Tree, Verdict, wrong_kind,
+    ActorId, AnnotatedTag, Commit, Conflict, ContentHash, EntityId, Object, Review, Tree, Verdict,
+    wrong_kind,
 };
 use crate::sign::{Signature, Signer};
 use crate::store::{
@@ -572,10 +573,68 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
         Ok(())
     }
 
+    /// Creates an annotated tag: a named, messaged reference to `commit`, signed by
+    /// the repository's signer when it has one. Tags are immutable, as with
+    /// [`Repository::create_tag`].
+    pub fn create_annotated_tag(
+        &mut self,
+        name: &str,
+        commit: ContentHash,
+        message: &str,
+        author: &ActorId,
+    ) -> Result<ContentHash, RepoError> {
+        validate_branch_name(name)?;
+        let reference = tag_ref(name);
+        if self.store.read_ref(&reference)?.is_some() {
+            return Err(RepoError::TagExists(name.into()));
+        }
+        ensure_no_name_clash(&self.store, &reference)?;
+        dag::load_commit(&self.store, &commit)?;
+        let mut tag = AnnotatedTag {
+            commit,
+            name: name.into(),
+            author: *author,
+            timestamp: self.clock.now(),
+            message: message.into(),
+            signature: None,
+        };
+        if let Some(signer) = &self.signer {
+            tag.signature = Some(Signature {
+                signer: signer.public_key(),
+                bytes: signer.sign(&tag.signing_bytes()),
+            });
+        }
+        let hash = store_object(&mut self.store, &Object::AnnotatedTag(tag))?;
+        if !self.store.compare_and_swap_ref(&reference, None, hash)? {
+            return Err(RepoError::TagExists(name.into()));
+        }
+        Ok(hash)
+    }
+
+    /// The annotated tag under `name`, or `None` if the tag is lightweight or
+    /// absent. Check it with [`AnnotatedTag::is_valid`] before trusting it.
+    pub fn annotated_tag(&self, name: &str) -> Result<Option<AnnotatedTag>, RepoError> {
+        validate_branch_name(name)?;
+        match self.store.read_ref(&tag_ref(name))? {
+            Some(hash) => match load_object(&self.store, &hash)? {
+                Object::AnnotatedTag(tag) => Ok(Some(tag)),
+                _ => Ok(None),
+            },
+            None => Ok(None),
+        }
+    }
+
     /// The commit a tag points at, or `None` if there is no such tag.
     pub fn resolve_tag(&self, name: &str) -> Result<Option<ContentHash>, RepoError> {
         validate_branch_name(name)?;
-        Ok(self.store.read_ref(&tag_ref(name))?)
+        match self.store.read_ref(&tag_ref(name))? {
+            Some(hash) => match load_object(&self.store, &hash)? {
+                Object::Commit(_) => Ok(Some(hash)),
+                Object::AnnotatedTag(tag) => Ok(Some(tag.commit)),
+                other => Err(wrong_kind("commit or tag", &other)),
+            },
+            None => Ok(None),
+        }
     }
 
     /// All tag names, sorted.

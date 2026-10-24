@@ -115,7 +115,7 @@ Plan: see the review notes. Tier 1 and Tier 2 come first.
 
 ### Tier 3: missing features
 - [x] `status`, `diff_working`, `reset`, `amend`, `revert`, `cherry_pick`. Only `reset_hard` exists. Soft and mixed resets are not implemented. `revert` and `cherry_pick` stage a three-way merge for review, so a clash becomes a conflict.
-- [~] Tags (immutable refs). `create_tag`, `resolve_tag`, `list_tags` and `delete_tag` are done, and tags live under the reserved `tags/` ref prefix. Tags are not signed yet.
+- [x] Tags (immutable refs), optionally signed. `create_tag` makes a lightweight tag. `create_annotated_tag` makes an `AnnotatedTag` object with a message and an optional signature. `resolve_tag` returns the commit for either kind, and `annotated_tag` returns the signed details. Tags live under the reserved `tags/` prefix and are immutable. Covered by `tests/signed_tags.rs`.
 - [x] Per-entity `history` and field-level `blame`: `Repository::entity_history` and `Repository::field_blame`, along the first-parent chain from the head.
 - [x] `fsck` (verify objects, signatures, refs) and `gc` (reachability). `maintenance::fsck` collects every problem; `Repository::gc` roots on refs, HEAD, the working copy and any pending merge, and refuses to delete if a reachable object is missing. S3 does not implement `PruneStore` yet, so gc is FS and memory only.
 - [x] `fetch` / `push` sync between stores (`sync::push`, `sync::fetch`). There is no separate `Remote` trait: any `CasStore` + `RefStore` is a remote. Only the reachable objects the destination lacks are copied, and the ref moves by compare-and-swap, so non-fast-forward updates are refused.
