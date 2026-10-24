@@ -4,6 +4,7 @@
 //! is an alias for it.
 
 use alloc::string::String;
+use alloc::vec::Vec;
 use core::fmt;
 
 use crate::object::{ContentHash, EntityId};
