@@ -137,5 +137,5 @@ Plan: see the review notes. Tier 1 and Tier 2 come first.
 - [~] CI: `cargo doc -D warnings` is done. Still open: `cargo deny` / audit, MSRV check, coverage, bench regression threshold.
 - [~] `cargo-fuzz` targets for `Object::decode` and `merge_trees`. Not set up: cargo-fuzz does not run on this machine. Proptest properties in `tests/decode_robustness.rs` cover `Object::decode` instead: no panics on random bytes, and corrupted objects are refused or re-encode exactly. They found that map keys and tree ids could be out of order, which gave one object two encodings. Decoding now refuses that.
 - [ ] Release automation (`release-plz` / `cargo-release`) and Dependabot for the pinned git revs.
-- [~] Error messages that suggest the next action; `#[non_exhaustive]` on error enums is done.
+- [x] Error messages that suggest the next action, and `#[non_exhaustive]` on error enums. The repository errors name the call that fixes them, such as `resolve_conflict`, `reset_hard` or `list_branches`.
 - [x] `pre_commit` / `post_merge` hook traits. `Hooks` on `Repository::with_hooks`; a refused `pre_commit` returns `RepoError::HookRejected`.

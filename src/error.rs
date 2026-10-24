@@ -153,7 +153,10 @@ impl fmt::Display for RepoError {
         match self {
             Self::Store(error) => write!(f, "{error}"),
             Self::Object(error) => write!(f, "{error}"),
-            Self::InvalidBranchName(name) => write!(f, "invalid branch name {name:?}"),
+            Self::InvalidBranchName(name) => write!(
+                f,
+                "invalid branch name {name:?}: use letters, digits, dot, underscore, dash and slash, with no leading or trailing separator, and do not use the tags/ or reviews/ prefix"
+            ),
             Self::BranchExists(name) => write!(f, "branch {name:?} already exists"),
             Self::BranchNameClash { name, existing } => {
                 write!(
@@ -161,29 +164,47 @@ impl fmt::Display for RepoError {
                     "branch {name:?} clashes with existing branch {existing:?}"
                 )
             }
-            Self::BranchNotFound(name) => write!(f, "branch {name:?} not found"),
+            Self::BranchNotFound(name) => write!(
+                f,
+                "branch {name:?} not found; list_branches shows the branches that exist"
+            ),
             Self::CannotDeleteCurrentBranch(name) => {
                 write!(f, "cannot delete the checked-out branch {name:?}")
             }
-            Self::DirtyWorkingCopy => write!(f, "working copy has uncommitted changes"),
+            Self::DirtyWorkingCopy => write!(
+                f,
+                "working copy has uncommitted changes; commit them, or reset_hard to discard them"
+            ),
             Self::UnresolvedConflicts(count) => {
                 write!(
                     f,
-                    "{count} unresolved conflict(s) must be resolved before committing"
+                    "{count} unresolved conflict(s); settle each with resolve_conflict, then commit"
                 )
             }
-            Self::ConflictPending(id) => write!(f, "entity {id} has an unresolved conflict"),
+            Self::ConflictPending(id) => write!(
+                f,
+                "entity {id} has an unresolved conflict; settle it with resolve_conflict"
+            ),
             Self::NoConflict(id) => write!(f, "entity {id} has no pending conflict"),
             Self::InvalidSignature(hash) => write!(f, "commit {hash} has an invalid signature"),
-            Self::RefMoved(name) => write!(f, "branch {name:?} moved since it was read"),
+            Self::RefMoved(name) => write!(
+                f,
+                "branch {name:?} moved since this repository read it; reopen it and retry"
+            ),
             Self::IdMismatch(id) => write!(f, "entity {id} does not load back under its own id"),
             Self::HookRejected(reason) => write!(f, "commit refused by a hook: {reason}"),
-            Self::TagExists(name) => write!(f, "tag {name:?} already exists"),
-            Self::TagNotFound(name) => write!(f, "tag {name:?} not found"),
+            Self::TagExists(name) => write!(
+                f,
+                "tag {name:?} already exists; tags are immutable, so choose another name"
+            ),
+            Self::TagNotFound(name) => write!(
+                f,
+                "tag {name:?} not found; list_tags shows the tags that exist"
+            ),
             Self::NotFastForward(name) => {
                 write!(
                     f,
-                    "branch {name:?} has commits the other side lacks; not a fast-forward"
+                    "branch {name:?} has commits the other side lacks, so this is not a fast-forward; fetch and merge first"
                 )
             }
             Self::MergeInProgress => {
@@ -196,7 +217,7 @@ impl fmt::Display for RepoError {
             Self::Untrusted(branch) => {
                 write!(
                     f,
-                    "branch {branch:?} accepts only commits signed by a trusted key"
+                    "branch {branch:?} accepts only commits signed by a trusted key; sign with a trusted key, or change the trust policy"
                 )
             }
         }
