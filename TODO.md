@@ -130,7 +130,7 @@ Plan: see the review notes. Tier 1 and Tier 2 come first.
 - [~] Time-travel queries: `entity_at` (by commit), `commit_as_of` and `entity_as_of` (by timestamp) are done. Diff-of-diffs for merge review is not.
 - [x] Signed review / approval objects stored in the CAS. `Object::Review` (tag 6) holds a verdict on a commit, signed by the repository's signer. Reviews live under `reviews/<commit>/<reviewer>` refs, so gc and fsck see them. A reviewer's later review replaces their earlier one. `Repository::review`, `reviews_of`, and `Review::is_valid` (signature only, not trust). Covered by `tests/reviews.rs`.
 - [x] Diff output for viewers: `export::diff_to_json`, `node_json` for values, and `export::diff_to_html` for a table with escaped content. Written by hand with no serde dependency, by design.
-- [ ] Live-collaboration op log on top of the DAG.
+- [~] Live-collaboration op log. `oplog` has an `OpLog` of Lamport-stamped puts and removes, and `Replica` for local edits and merges. Each entity's state comes from its highest stamp, so logs converge in any merge order (checked by a property test). It is not wired into the DAG: it sits beside it as an edit stream, with no causal delivery, no persistence, and no network. Covered by `tests/oplog.rs`.
 
 ### Tier 5: automation and usability
 - [~] `tpt` CLI. `src/bin/tpt.rs`, behind the default `cli` feature, covers init, commit, get, list, log, diff, branch, branches, switch, merge (with an ours or theirs preference for every conflict), tag, tags, fsck and gc, over a key-value document. Still missing: a per-conflict `resolve` command. Merges are one step, so their conflicts cannot be settled across runs yet. Covered by `tests/cli.rs`.

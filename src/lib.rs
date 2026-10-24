@@ -17,6 +17,7 @@ pub mod history;
 pub mod maintenance;
 pub mod merge;
 pub mod object;
+pub mod oplog;
 pub mod prelude;
 pub mod repo;
 pub mod sign;

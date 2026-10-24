@@ -35,6 +35,8 @@
   on both sides merge by strategy instead of conflicting. `ListStrategy::Union`
   treats a list as a set, and a removal on either side wins.
 - `ListStrategy::Ordered`: a sequence-aware three-way merge over list items.
+- `oplog`: a live-collaboration op log. Replicas stamp edits with Lamport clocks,
+  and logs converge in any merge order. It sits beside the DAG, not inside it.
 - Signed tags: `Repository::create_annotated_tag` and `annotated_tag`, stored as
   `Object::AnnotatedTag` under `tags/`. `resolve_tag` accepts both kinds.
 - Large snapshots (over 256 entities) are stored as shards under `Object::TreeRoot`.
