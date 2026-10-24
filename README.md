@@ -151,9 +151,17 @@ cargo run --bin tpt -- branch review
 cargo run --bin tpt -- switch review
 cargo run --bin tpt -- commit "tighten title" title="Spec v2"
 cargo run --bin tpt -- switch main
-cargo run --bin tpt -- merge review theirs "take review's title"
+cargo run --bin tpt -- merge review "combine the reviews"
+cargo run --bin tpt -- conflicts
+cargo run --bin tpt -- resolve title theirs
+cargo run --bin tpt -- finish-merge "combine the reviews"
 cargo run --bin tpt -- log
 ```
+
+A merge that conflicts stays pending in the store. `conflicts` lists each
+conflict, `resolve <key> ours|theirs` settles one, and `finish-merge` commits
+the merge once none remain. `merge <branch> ours|theirs <message>` settles every
+conflict in one step instead.
 
 Run `tpt` with no arguments for the full command list. The store defaults to
 `.tpt`, and `--dir` picks another.

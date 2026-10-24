@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.0 (prepared, not published)
 
 ### Added
 
@@ -68,6 +68,17 @@
   commit, `post_merge` runs after a merge).
 - `maintenance::fsck` reports missing, corrupt and badly signed objects, and
   broken refs. `Repository::gc` removes unreachable objects, via `PruneStore`.
+- Pending merges survive between processes. A merge that leaves conflicts is
+  saved under `merges/<branch>/` refs, and `Repository::open` resumes it. Those
+  refs are gc roots, and branch names may not use the `merges/` prefix.
+- `Validator` and `Repository::with_validator`. A validator sees the whole
+  snapshot, so it can check rules that span entities. Commits are refused while
+  one reports a problem (`RepoError::ValidationFailed`). `Repository::validate`
+  runs them on demand.
+- `tpt conflicts`, `tpt resolve <key> ours|theirs` and `tpt finish-merge`, which
+  settle a conflicted merge over several runs. `tpt merge <branch> <message>`
+  leaves conflicts pending, where `merge <branch> ours|theirs <message>` settles
+  them all at once.
 
 ### Changed
 
@@ -86,11 +97,23 @@
 - Merge-base search loads each commit once. It was quadratic in the number of
   common ancestors.
 - Error enums are `#[non_exhaustive]`.
+- Benchmarks use Criterion (`cargo bench --bench throughput`). CI compiles them.
+- `tpt merge` that fast-forwards, or is already up to date, no longer makes an
+  empty commit on top of the result.
 
 ### Fixed
 
 - File-system writes use unique temp files and `sync_all` before the rename, so
   concurrent writers do not share a temp file or publish unsynced contents.
+- `Repository::merge_review`: while a merge is pending, its result against each side.
+- Cherry-pick follows commit order for `LastWriterWins`, as merges do. Before,
+  the picked commit had no order, so such fields always conflicted.
+- Fuzz targets in `fuzz/` (`decode_object`, `merge_histories`), run for 60 s each
+  in CI. A line-coverage gate (88%) runs in CI too.
+- The crate's minimum supported Rust version is 1.88 (`rust-version`), checked
+  in CI.
+- `Repository::status` and `diff_working` no longer fail while a merge has
+  conflicts. Conflicted entries are reported as conflicts, not as changes.
 
 ### Design decisions
 
@@ -98,5 +121,5 @@
   identities are local 16-byte values.
 - `tpt-uir-core` has no generic value tree, so `UirNode` is defined in this
   crate. Its encoding is pinned by a test.
-- Pending merge conflicts are held in memory. A repository reopened mid-merge
-  returns to its committed head rather than resuming the merge.
+- A pending merge is saved only for a branch. A merge made while detached is
+  lost when the repository is dropped.

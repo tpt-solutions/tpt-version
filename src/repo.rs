@@ -25,6 +25,7 @@ use crate::store::{
 };
 use crate::trust::TrustPolicy;
 use crate::uir::UirNode;
+use crate::validate::Validator;
 
 /// The branch a fresh repository starts on.
 pub const DEFAULT_BRANCH: &str = "main";
@@ -79,6 +80,29 @@ const TAG_PREFIX: &str = "tags/";
 /// may not start with it either.
 const REVIEW_PREFIX: &str = "reviews/";
 
+/// Refs under this prefix hold a pending merge, one pair per branch. Branch
+/// names may not start with it either.
+const MERGE_PREFIX: &str = "merges/";
+
+/// How a pending merge's result differs from each of its sides.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MergeReview {
+    /// The changes from the head to the merged result: what the merge brings in.
+    pub from_head: Vec<DiffEntry>,
+    /// The changes from the incoming commit to the merged result: what the merge
+    /// keeps from the head, and any resolution that differs from the incoming side.
+    pub from_incoming: Vec<DiffEntry>,
+}
+
+/// The two refs that hold the pending merge of `branch`: the staged tree and the
+/// commit being merged in.
+fn merge_refs(branch: &str) -> (String, String) {
+    (
+        alloc::format!("{MERGE_PREFIX}{branch}/tree"),
+        alloc::format!("{MERGE_PREFIX}{branch}/theirs"),
+    )
+}
+
 /// The ref that holds tag `name`.
 fn tag_ref(name: &str) -> String {
     alloc::format!("{TAG_PREFIX}{name}")
@@ -93,6 +117,7 @@ pub fn validate_branch_name(name: &str) -> Result<(), RepoError> {
         && name.len() <= 200
         && !name.starts_with(TAG_PREFIX)
         && !name.starts_with(REVIEW_PREFIX)
+        && !name.starts_with(MERGE_PREFIX)
         && !name.starts_with(['/', '.', '-'])
         && !name.ends_with(['/', '.'])
         && !name.contains("..")
@@ -169,6 +194,7 @@ pub struct Repository<S, C> {
     conflicts: Vec<Conflict>,
     hooks: Option<Box<dyn Hooks>>,
     trust: Option<TrustPolicy>,
+    validators: Vec<Box<dyn Validator>>,
     merge_policy: MergePolicy,
 }
 
@@ -184,10 +210,22 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
             // clash with an existing branch either.
             ensure_no_name_clash(&store, branch)?;
         }
-        let staged = match head {
+        let mut staged = match head {
             Some(commit) => load_tree(&store, &dag::commit_tree(&store, &commit)?)?.entries,
             None => BTreeMap::new(),
         };
+        // A merge that was left pending by an earlier process comes back as it was
+        // staged, with its conflicts read from the conflict objects it holds.
+        let (tree_ref, theirs_ref) = merge_refs(branch);
+        let mut merge_parents = Vec::new();
+        let mut conflicts = Vec::new();
+        if let (Some(tree), Some(theirs)) =
+            (store.read_ref(&tree_ref)?, store.read_ref(&theirs_ref)?)
+        {
+            staged = load_tree(&store, &tree)?.entries;
+            conflicts = conflicts_in(&store, &staged)?;
+            merge_parents = vec![theirs];
+        }
         Ok(Self {
             store,
             clock,
@@ -195,10 +233,11 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
             staged,
             head,
             branch: Some(branch.into()),
-            merge_parents: Vec::new(),
-            conflicts: Vec::new(),
+            merge_parents,
+            conflicts,
             hooks: None,
             trust: None,
+            validators: Vec::new(),
             merge_policy: MergePolicy::new(),
         })
     }
@@ -228,6 +267,36 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
     pub fn with_trust_policy(mut self, policy: TrustPolicy) -> Self {
         self.trust = Some(policy);
         self
+    }
+
+    /// Adds a validator. From now on every commit checks the whole snapshot
+    /// against it, and is refused while it reports a problem. Commits made
+    /// before the validator was added are not re-checked. Snapshots that arrive
+    /// by [`crate::sync::fetch`] are not checked either.
+    pub fn with_validator(mut self, validator: Box<dyn Validator>) -> Self {
+        self.validators.push(validator);
+        self
+    }
+
+    /// Runs every validator against the working copy and returns their
+    /// problems, empty when it passes. Entities in a pending conflict are left
+    /// out. With no validators this costs nothing.
+    pub fn validate(&self) -> Result<Vec<String>, RepoError> {
+        if self.validators.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut entities = BTreeMap::new();
+        for (id, hash) in &self.staged {
+            if self.conflicts.iter().any(|conflict| conflict.entity == *id) {
+                continue;
+            }
+            entities.insert(*id, load_entity(&self.store, hash)?);
+        }
+        let mut problems = Vec::new();
+        for validator in &self.validators {
+            problems.extend(validator.check(&entities));
+        }
+        Ok(problems)
     }
 
     /// Refuses a merge into a governed branch when it brings in a commit that
@@ -260,8 +329,6 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
         }
     }
 
-    /// The changes in the working copy that a commit would record, compared
-    /// with the head. Empty when the working copy matches the head.
     /// The commits on the current branch that changed `id`, newest first. Follows
     /// the first parent of each commit.
     pub fn entity_history(&self, id: &EntityId) -> Result<Vec<EntityVersion>, RepoError> {
@@ -300,12 +367,34 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
     /// with the head. Empty when the working copy matches the head.
     pub fn diff_working(&self) -> Result<Vec<DiffEntry>, RepoError> {
         let old = Tree {
-            entries: self.head_entries()?,
+            entries: without_conflicts(&self.conflicts, self.head_entries()?),
         };
         let new = Tree {
-            entries: self.staged.clone(),
+            entries: without_conflicts(&self.conflicts, self.staged.clone()),
         };
         diff_trees(&self.store, &old, &new)
+    }
+
+    /// How a pending merge's result differs from each of its two sides. `None`
+    /// when no merge is pending. Conflicted entities are left out, as in
+    /// [`Repository::diff_working`].
+    pub fn merge_review(&self) -> Result<Option<MergeReview>, RepoError> {
+        let Some(incoming) = self.merge_parents.first() else {
+            return Ok(None);
+        };
+        let merged = Tree {
+            entries: without_conflicts(&self.conflicts, self.staged.clone()),
+        };
+        let head = Tree {
+            entries: without_conflicts(&self.conflicts, self.head_entries()?),
+        };
+        let incoming = Tree {
+            entries: without_conflicts(&self.conflicts, commit_entries(&self.store, incoming)?),
+        };
+        Ok(Some(MergeReview {
+            from_head: diff_trees(&self.store, &head, &merged)?,
+            from_incoming: diff_trees(&self.store, &incoming, &merged)?,
+        }))
     }
 
     /// The underlying store, for reading objects directly.
@@ -431,6 +520,10 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
         if !self.conflicts.is_empty() {
             return Err(RepoError::UnresolvedConflicts(self.conflicts.len()));
         }
+        let problems = self.validate()?;
+        if !problems.is_empty() {
+            return Err(RepoError::ValidationFailed(problems));
+        }
         if self.hooks.is_some() {
             let changes = self.diff_working()?;
             if let Some(hooks) = self.hooks.as_mut() {
@@ -467,7 +560,10 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
             self.advance_branch(&name, self.head, hash)?;
         }
         self.head = Some(hash);
-        self.merge_parents.clear();
+        if !self.merge_parents.is_empty() {
+            self.merge_parents.clear();
+            self.clear_merge_state()?;
+        }
         Ok(hash)
     }
 
@@ -499,7 +595,11 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
             .store
             .list_refs()?
             .into_iter()
-            .filter(|name| !name.starts_with(TAG_PREFIX) && !name.starts_with(REVIEW_PREFIX))
+            .filter(|name| {
+                !name.starts_with(TAG_PREFIX)
+                    && !name.starts_with(REVIEW_PREFIX)
+                    && !name.starts_with(MERGE_PREFIX)
+            })
             .collect())
     }
 
@@ -676,7 +776,7 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
         dag::load_commit(&self.store, &commit)?;
         self.move_to(commit)?;
         self.conflicts.clear();
-        Ok(())
+        self.clear_merge_state()
     }
 
     /// Stages the inverse of `commit`'s change on top of the head, as a
@@ -685,7 +785,10 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
     pub fn revert(&mut self, commit: ContentHash) -> Result<MergeResult, RepoError> {
         let (parent_tree, change) = self.change_of(&commit)?;
         // Undo the change: the base is the commit's own tree, theirs the parent's.
-        self.apply_change(change, parent_tree)
+        // The reverted commit has no side of its own to be newer than, so
+        // `LastWriterWins` fields conflict here.
+        let policy = self.merge_policy.clone();
+        self.apply_change(change, parent_tree, policy)
     }
 
     /// Stages `commit`'s change on top of the head, as a three-way merge. The
@@ -693,7 +796,13 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
     /// are resolved.
     pub fn cherry_pick(&mut self, commit: ContentHash) -> Result<MergeResult, RepoError> {
         let (parent_tree, change) = self.change_of(&commit)?;
-        self.apply_change(parent_tree, change)
+        // The picked commit is the incoming side, so `LastWriterWins` compares it
+        // with the head by commit order, as a merge would.
+        let policy = match self.head {
+            Some(head) => self.policy_between(&head, &commit)?,
+            None => self.merge_policy.clone(),
+        };
+        self.apply_change(parent_tree, change, policy)
     }
 
     /// The tree of `commit`'s first parent (empty for a root commit), and the
@@ -781,14 +890,14 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
         &mut self,
         base: ContentHash,
         theirs: ContentHash,
+        policy: MergePolicy,
     ) -> Result<MergeResult, RepoError> {
         self.ensure_clean()?;
         let ours = match self.head {
             Some(head) => dag::commit_tree(&self.store, &head)?,
             None => store_object(&mut self.store, &Object::Tree(Tree::default()))?,
         };
-        let result =
-            merge::merge_trees_with(&mut self.store, base, ours, theirs, &self.merge_policy)?;
+        let result = merge::merge_trees_with(&mut self.store, base, ours, theirs, &policy)?;
         self.staged = load_tree(&self.store, &result.merged_tree)?.entries;
         self.conflicts = result.conflicts.clone();
         Ok(result)
@@ -878,7 +987,33 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
         self.staged = load_tree(&self.store, &result.merged_tree)?.entries;
         self.merge_parents = vec![theirs];
         self.conflicts = result.conflicts.clone();
+        self.save_merge_state()?;
         Ok(result)
+    }
+
+    /// Stores the pending merge under the current branch, so that a later
+    /// [`Repository::open`] on that branch resumes it. A detached merge is not
+    /// saved, since there is no branch to key it by.
+    fn save_merge_state(&mut self) -> Result<(), RepoError> {
+        let (Some(branch), Some(theirs)) = (self.branch.clone(), self.merge_parents.first()) else {
+            return Ok(());
+        };
+        let tree = store_tree(&mut self.store, self.staged.clone())?;
+        let (tree_ref, theirs_ref) = merge_refs(&branch);
+        self.store.write_ref(&tree_ref, tree)?;
+        self.store.write_ref(&theirs_ref, *theirs)?;
+        Ok(())
+    }
+
+    /// Removes the saved pending merge of the current branch, if there is one.
+    fn clear_merge_state(&mut self) -> Result<(), RepoError> {
+        let Some(branch) = self.branch.clone() else {
+            return Ok(());
+        };
+        let (tree_ref, theirs_ref) = merge_refs(&branch);
+        self.store.delete_ref(&tree_ref)?;
+        self.store.delete_ref(&theirs_ref)?;
+        Ok(())
     }
 
     /// Resolves the pending conflict on `id`.
@@ -909,7 +1044,7 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
                 self.staged.remove(id);
             }
         }
-        Ok(())
+        self.save_merge_state()
     }
 
     fn move_to(&mut self, target: ContentHash) -> Result<(), RepoError> {
@@ -1025,6 +1160,33 @@ fn ensure_no_name_clash<S: RefStore>(store: &S, name: &str) -> Result<(), RepoEr
         }
     }
     Ok(())
+}
+
+/// The conflicts in a staged tree. A conflicted entry points at its conflict
+/// object instead of at an entity.
+fn conflicts_in<S: CasStore>(
+    store: &S,
+    staged: &BTreeMap<EntityId, ContentHash>,
+) -> Result<Vec<Conflict>, RepoError> {
+    let mut conflicts = Vec::new();
+    for hash in staged.values() {
+        if let Object::Conflict(conflict) = load_object(store, hash)? {
+            conflicts.push(conflict);
+        }
+    }
+    Ok(conflicts)
+}
+
+/// The entries without the entities in a pending conflict. A conflicted entry
+/// holds a conflict object, not an entity, so it cannot be diffed.
+fn without_conflicts(
+    conflicts: &[Conflict],
+    mut entries: BTreeMap<EntityId, ContentHash>,
+) -> BTreeMap<EntityId, ContentHash> {
+    for conflict in conflicts {
+        entries.remove(&conflict.entity);
+    }
+    entries
 }
 
 fn commit_entries<S: CasStore>(

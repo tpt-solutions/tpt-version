@@ -303,3 +303,25 @@ fn ordered_still_conflicts_on_two_insertions_at_one_position() {
     assert_eq!(result.conflicts.len(), 1);
     assert_eq!(result.conflicts[0].fields[0].path, ["tags"]);
 }
+
+#[test]
+fn cherry_pick_takes_the_newer_commit_for_last_writer_wins() {
+    let policy = MergePolicy::new().field(&["body"], FieldStrategy::LastWriterWins);
+    let key = EntityId::from_bytes([6; 16]);
+
+    // The picked commit is newer than head, so its value wins.
+    let mut picked_newer = lww_branches(policy.clone(), true);
+    let side_head = picked_newer.resolve_branch("side").unwrap().unwrap();
+    picked_newer.cherry_pick(side_head).unwrap();
+    assert!(picked_newer.conflicts().is_empty());
+    let kept: Note = picked_newer.entity(&key).unwrap().unwrap();
+    assert_eq!(kept.body, "from side");
+
+    // Head is newer than the picked commit, so head's value stays.
+    let mut head_newer = lww_branches(policy, false);
+    let side_head = head_newer.resolve_branch("side").unwrap().unwrap();
+    head_newer.cherry_pick(side_head).unwrap();
+    assert!(head_newer.conflicts().is_empty());
+    let kept: Note = head_newer.entity(&key).unwrap().unwrap();
+    assert_eq!(kept.body, "from main");
+}

@@ -16,3 +16,5 @@ Thumbs.db
 # Env
 .env
 wasm/www/pkg/
+fuzz/target/
+fuzz/artifacts/

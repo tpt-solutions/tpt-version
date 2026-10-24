@@ -1,7 +1,8 @@
 [package]
 name = "tpt-version"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
+rust-version = "1.88"
 license = "MIT OR Apache-2.0"
 description = "Content-addressable, structure-aware version control for tpt-model entities"
 repository = "https://github.com/tpt-solutions/tpt-version"
@@ -59,6 +60,8 @@ required-features = ["std"]
 # Dev-only. Pinned to a revision, since the crate is not on crates.io.
 tpt-testkit = { git = "https://github.com/tpt-solutions/tpt-testkit", rev = "e77a90198eed4235224a49e3226fe2c1b9f2247b", default-features = false, features = ["golden", "property"] }
 proptest = "1"
+# Benchmarks only.
+criterion = "0.5"
 
 [workspace]
 members = ["derive", "wasm"]

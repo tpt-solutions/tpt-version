@@ -12,3 +12,4 @@ pub use crate::object::{ActorId, ContentHash, EntityId};
 pub use crate::repo::{Clock, LogicalClock, Repository};
 pub use crate::store::{CasStore, MemoryStore, RefStore};
 pub use crate::uir::{Scalar, UirNode};
+pub use crate::validate::Validator;

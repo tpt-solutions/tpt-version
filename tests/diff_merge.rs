@@ -371,3 +371,34 @@ fn uncommitted_changes_block_a_merge() {
     repo.put_entity(&vertex(1, [1.0; 3])).unwrap();
     assert_eq!(repo.merge("other"), Err(RepoError::DirtyWorkingCopy));
 }
+
+#[test]
+fn merge_review_shows_each_side_against_the_merged_result() {
+    let mut repo = new_repo();
+    repo.put_entity(&vertex(1, [0.0; 3])).unwrap();
+    let base = repo.commit("base", &author()).unwrap();
+    repo.branch("side", base).unwrap();
+
+    // Main adds vertex 2. The side moves vertex 1.
+    repo.put_entity(&vertex(2, [1.0, 0.0, 0.0])).unwrap();
+    repo.commit("add", &author()).unwrap();
+    repo.switch_branch("side").unwrap();
+    repo.put_entity(&vertex(1, [5.0, 0.0, 0.0])).unwrap();
+    repo.commit("move", &author()).unwrap();
+    repo.switch_branch("main").unwrap();
+
+    assert!(repo.merge_review().unwrap().is_none());
+    repo.merge("side").unwrap();
+    let review = repo.merge_review().unwrap().expect("a merge is pending");
+
+    // From the head, the merge only moves vertex 1.
+    assert_eq!(review.from_head.len(), 1);
+    assert!(
+        matches!(&review.from_head[0], DiffEntry::Modified { id: found, .. } if *found == id(1))
+    );
+    // From the side, the merge only adds vertex 2.
+    assert_eq!(review.from_incoming.len(), 1);
+    assert!(
+        matches!(&review.from_incoming[0], DiffEntry::Added { id: found, .. } if *found == id(2))
+    );
+}

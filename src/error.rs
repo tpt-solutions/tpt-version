@@ -76,6 +76,8 @@ pub enum RepoError {
     DirtyWorkingCopy,
     /// A merge left conflicts that must be resolved before committing.
     UnresolvedConflicts(usize),
+    /// A validator reported problems with the snapshot. Each message names one.
+    ValidationFailed(Vec<String>),
     /// The entity has an unresolved conflict and cannot be edited yet.
     ConflictPending(EntityId),
     /// The entity has no pending conflict to resolve.
@@ -155,7 +157,7 @@ impl fmt::Display for RepoError {
             Self::Object(error) => write!(f, "{error}"),
             Self::InvalidBranchName(name) => write!(
                 f,
-                "invalid branch name {name:?}: use letters, digits, dot, underscore, dash and slash, with no leading or trailing separator, and do not use the tags/ or reviews/ prefix"
+                "invalid branch name {name:?}: use letters, digits, dot, underscore, dash and slash, with no leading or trailing separator, and do not use the tags/, reviews/ or merges/ prefix"
             ),
             Self::BranchExists(name) => write!(f, "branch {name:?} already exists"),
             Self::BranchNameClash { name, existing } => {
@@ -181,6 +183,12 @@ impl fmt::Display for RepoError {
                     "{count} unresolved conflict(s); settle each with resolve_conflict, then commit"
                 )
             }
+            Self::ValidationFailed(problems) => write!(
+                f,
+                "{} validation problem(s), first: {}; fix the entities with put_entity or remove_entity, then commit",
+                problems.len(),
+                problems.first().map_or("", String::as_str)
+            ),
             Self::ConflictPending(id) => write!(
                 f,
                 "entity {id} has an unresolved conflict; settle it with resolve_conflict"

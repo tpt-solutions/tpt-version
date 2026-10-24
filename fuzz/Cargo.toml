@@ -1,0 +1,29 @@
+[package]
+name = "tpt-version-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+tpt-version = { path = ".." }
+
+[[bin]]
+name = "decode_object"
+path = "fuzz_targets/decode_object.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "merge_histories"
+path = "fuzz_targets/merge_histories.rs"
+test = false
+doc = false
+bench = false
+
+# Keep the fuzz crate out of the main workspace.
+[workspace]

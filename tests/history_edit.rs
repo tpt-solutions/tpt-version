@@ -3,7 +3,7 @@
 mod common;
 
 use common::{Vertex, author, id, new_repo, vertex};
-use tpt_version::{RepoError, Resolution};
+use tpt_version::{RefStore, RepoError, Resolution};
 
 fn position(
     repo: &tpt_version::Repository<tpt_version::MemoryStore, tpt_version::LogicalClock>,
@@ -115,4 +115,39 @@ fn revert_that_clashes_with_a_later_edit_stages_a_conflict() {
     repo.resolve_conflict(&id(1), Resolution::Ours).unwrap();
     repo.commit("revert with ours", &author()).unwrap();
     assert_eq!(position(&repo, 1), Some([2.0, 0.0, 0.0]));
+}
+
+#[test]
+fn reset_hard_clears_a_pending_merge() {
+    let mut repo = new_repo();
+    repo.put_entity(&vertex(1, [0.0; 3])).unwrap();
+    let base = repo.commit("base", &author()).unwrap();
+    repo.branch("alt", base).unwrap();
+    repo.put_entity(&vertex(1, [1.0, 0.0, 0.0])).unwrap();
+    repo.commit("main side", &author()).unwrap();
+    repo.switch_branch("alt").unwrap();
+    repo.put_entity(&vertex(1, [2.0, 0.0, 0.0])).unwrap();
+    repo.commit("alt side", &author()).unwrap();
+
+    repo.merge("main").unwrap();
+    assert!(!repo.conflicts().is_empty());
+    assert!(
+        repo.store()
+            .list_refs()
+            .unwrap()
+            .iter()
+            .any(|name| name.starts_with("merges/"))
+    );
+
+    repo.reset_hard(base).unwrap();
+    assert!(repo.conflicts().is_empty());
+    assert!(!repo.status().unwrap().merging);
+    assert!(
+        !repo
+            .store()
+            .list_refs()
+            .unwrap()
+            .iter()
+            .any(|name| name.starts_with("merges/"))
+    );
 }

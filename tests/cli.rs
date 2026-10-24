@@ -46,3 +46,72 @@ fn commit_get_and_diff_round_trip() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn conflicted_merge_survives_between_runs() {
+    let dir = std::env::temp_dir().join(format!("tpt-cli-merge-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(tpt(&dir, &["init"]).status.success());
+    assert!(
+        tpt(&dir, &["commit", "base", "a=1", "b=1"])
+            .status
+            .success()
+    );
+    assert!(tpt(&dir, &["branch", "alt"]).status.success());
+    assert!(tpt(&dir, &["commit", "main side", "a=2"]).status.success());
+    assert!(tpt(&dir, &["switch", "alt"]).status.success());
+    assert!(tpt(&dir, &["commit", "alt side", "a=3"]).status.success());
+
+    let merge = tpt(&dir, &["merge", "main", "merged"]);
+    assert!(
+        merge.status.success(),
+        "{}",
+        String::from_utf8_lossy(&merge.stderr)
+    );
+    assert!(stdout(&merge).contains("merge left 1 conflict(s) pending"));
+
+    // Nothing may be committed while the conflict is pending, in this run or the next.
+    assert!(!tpt(&dir, &["commit", "too soon", "b=2"]).status.success());
+    assert!(!tpt(&dir, &["finish-merge", "too soon"]).status.success());
+
+    // Garbage collection must keep the pending merge's objects.
+    assert!(tpt(&dir, &["gc"]).status.success());
+    let listed = stdout(&tpt(&dir, &["conflicts"]));
+    assert!(listed.contains("a: ours \"3\" | theirs \"2\""), "{listed}");
+
+    assert!(tpt(&dir, &["resolve", "a", "theirs"]).status.success());
+    assert!(!tpt(&dir, &["resolve", "b", "ours"]).status.success());
+    assert!(tpt(&dir, &["finish-merge", "merged"]).status.success());
+
+    assert_eq!(stdout(&tpt(&dir, &["get", "a"])), "2\n");
+    assert!(stdout(&tpt(&dir, &["log"])).contains("merged"));
+    assert!(!stdout(&tpt(&dir, &["branches"])).contains("merges"));
+    assert!(!tpt(&dir, &["finish-merge", "again"]).status.success());
+    assert!(!tpt(&dir, &["branch", "merges/alt"]).status.success());
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn prefer_flag_settles_every_conflict_in_one_run() {
+    let dir = std::env::temp_dir().join(format!("tpt-cli-prefer-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(tpt(&dir, &["init"]).status.success());
+    assert!(tpt(&dir, &["commit", "base", "a=1"]).status.success());
+    assert!(tpt(&dir, &["branch", "alt"]).status.success());
+    assert!(tpt(&dir, &["commit", "main side", "a=2"]).status.success());
+    assert!(tpt(&dir, &["switch", "alt"]).status.success());
+    assert!(tpt(&dir, &["commit", "alt side", "a=3"]).status.success());
+
+    assert!(
+        tpt(&dir, &["merge", "main", "ours", "kept"])
+            .status
+            .success()
+    );
+    assert_eq!(stdout(&tpt(&dir, &["get", "a"])), "3\n");
+    assert!(stdout(&tpt(&dir, &["conflicts"])).contains("no conflicts"));
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

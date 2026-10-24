@@ -26,6 +26,7 @@ pub mod sync;
 mod text_merge;
 pub mod trust;
 pub mod uir;
+pub mod validate;
 
 pub use diff::{DiffEntry, EntityDiff, FieldChange};
 pub use entity::{Entity, UirValue};
@@ -35,7 +36,7 @@ pub use merge::{MergeResult, Resolution};
 pub use object::{
     ActorId, Commit, Conflict, ContentHash, EntityId, FieldConflict, Object, Review, Tree, Verdict,
 };
-pub use repo::{Clock, LogicalClock, Repository};
+pub use repo::{Clock, LogicalClock, MergeReview, Repository};
 pub use sign::{Ed25519Signer, Signature, Signer};
 pub use store::{CasStore, MemoryStore, RefStore};
 /// The `#[derive(Entity)]` macro. It shares a name with the trait, which lives
@@ -43,3 +44,4 @@ pub use store::{CasStore, MemoryStore, RefStore};
 #[cfg(feature = "derive")]
 pub use tpt_version_derive::Entity;
 pub use uir::{Scalar, UirNode};
+pub use validate::Validator;

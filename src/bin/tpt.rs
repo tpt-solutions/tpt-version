@@ -8,7 +8,11 @@
 //! tpt [--dir DIR] branch <name>                       create a branch at the head
 //! tpt [--dir DIR] branches                            list branches
 //! tpt [--dir DIR] switch <name>                       check out a branch
+//! tpt [--dir DIR] merge <branch> <message>            merge; conflicts stay pending
 //! tpt [--dir DIR] merge <branch> <ours|theirs> <message>
+//! tpt [--dir DIR] conflicts                           list the pending conflicts
+//! tpt [--dir DIR] resolve <key> <ours|theirs>         settle one pending conflict
+//! tpt [--dir DIR] finish-merge <message>              commit a merge once none remain
 //! tpt [--dir DIR] tag <name>                          tag the head
 //! tpt [--dir DIR] tags                                list tags
 //! tpt [--dir DIR] fsck                                check the store
@@ -16,7 +20,8 @@
 //! ```
 //!
 //! The store defaults to `.tpt` in the current directory. Each command is one
-//! step, so the working copy never has to outlive the process.
+//! step. A merge that leaves conflicts is saved in the store, so `conflicts`
+//! and `resolve` can settle it in later runs.
 
 use std::collections::BTreeMap;
 use std::env;
@@ -29,6 +34,7 @@ use tpt_version::UirNode;
 use tpt_version::diff::{DiffEntry, diff_commits};
 use tpt_version::export::node_json;
 use tpt_version::maintenance::fsck;
+use tpt_version::object::Object;
 use tpt_version::prelude::*;
 use tpt_version::repo::SystemClock;
 use tpt_version::store::FileSystemStore;
@@ -58,7 +64,7 @@ fn entry(key: &str, value: &str) -> Entry {
 
 fn usage() -> ExitCode {
     eprintln!(
-        "usage: tpt [--dir DIR] <commit|get|list|log|branch|branches|switch|merge|tag|tags|fsck|gc> ..."
+        "usage: tpt [--dir DIR] <commit|get|list|log|branch|branches|switch|merge|conflicts|resolve|finish-merge|tag|tags|fsck|gc> ..."
     );
     ExitCode::FAILURE
 }
@@ -149,21 +155,49 @@ fn run(mut args: Vec<String>) -> Result<ExitCode, Failure> {
             repo.switch_branch(name)?;
             fs::write(dir.join("HEAD"), name)?;
         }
+        ("merge", [source, message]) => merge_into_head(&mut repo, source, None, message, &author)?,
         ("merge", [source, prefer, message]) => {
-            let resolution = match prefer.as_str() {
-                "ours" => Resolution::Ours,
-                "theirs" => Resolution::Theirs,
-                other => return Err(format!("prefer must be ours or theirs, not {other:?}").into()),
-            };
-            let result = repo.merge(source)?;
-            for conflict in &result.conflicts {
-                repo.resolve_conflict(&conflict.entity, resolution.clone())?;
+            merge_into_head(&mut repo, source, Some(prefer), message, &author)?;
+        }
+        ("conflicts", []) => {
+            let conflicts = repo.conflicts().to_vec();
+            if conflicts.is_empty() {
+                println!("no conflicts");
             }
-            if !result.conflicts.is_empty() {
-                println!(
-                    "resolved {} conflict(s) with {prefer}",
-                    result.conflicts.len()
+            for conflict in &conflicts {
+                let ours = stored_entry(&repo, conflict.ours)?;
+                let theirs = stored_entry(&repo, conflict.theirs)?;
+                let base = stored_entry(&repo, conflict.base)?;
+                let key = ours
+                    .as_ref()
+                    .or(theirs.as_ref())
+                    .or(base.as_ref())
+                    .map_or("?", |found| found.key.as_str());
+                let side = |found: &Option<Entry>| match found {
+                    Some(found) => format!("{:?}", found.value),
+                    None => "(deleted)".into(),
+                };
+                println!("{key}: ours {} | theirs {}", side(&ours), side(&theirs));
+            }
+        }
+        ("resolve", [key, prefer]) => {
+            let resolution = parse_resolution(prefer)?;
+            let id = entry(key, "").id;
+            if !repo
+                .conflicts()
+                .iter()
+                .any(|conflict| conflict.entity == id)
+            {
+                return Err(
+                    format!("{key:?} has no pending conflict; run conflicts to list them").into(),
                 );
+            }
+            repo.resolve_conflict(&id, resolution)?;
+            println!("resolved {key:?} with {prefer}");
+        }
+        ("finish-merge", [message]) => {
+            if !repo.status()?.merging {
+                return Err("no merge is pending; start one with merge <branch> <message>".into());
             }
             let hash = repo.commit(message, &author)?;
             println!("{hash}");
@@ -225,6 +259,71 @@ fn run(mut args: Vec<String>) -> Result<ExitCode, Failure> {
         _ => return Ok(usage()),
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// Merges `source` into the current branch. With `prefer`, every conflict is
+/// settled that way and the merge is committed. Without it, conflicts are left
+/// pending for `conflicts` and `resolve`, and `finish-merge` commits them.
+fn merge_into_head(
+    repo: &mut Repository<FileSystemStore, SystemClock>,
+    source: &str,
+    prefer: Option<&str>,
+    message: &str,
+    author: &ActorId,
+) -> Result<(), Failure> {
+    let result = repo.merge(source)?;
+    if let Some(prefer) = prefer {
+        let resolution = parse_resolution(prefer)?;
+        for conflict in &result.conflicts {
+            repo.resolve_conflict(&conflict.entity, resolution.clone())?;
+        }
+        if !result.conflicts.is_empty() {
+            println!(
+                "resolved {} conflict(s) with {prefer}",
+                result.conflicts.len()
+            );
+        }
+    }
+    let status = repo.status()?;
+    if !status.merging {
+        // Fast-forwarded, or already up to date: there is nothing to commit.
+        println!(
+            "{}",
+            repo.head()
+                .map_or("no commits".into(), |head| head.to_string())
+        );
+    } else if !status.conflicts.is_empty() {
+        println!(
+            "merge left {} conflict(s) pending; run conflicts, then resolve <key> ours|theirs for each, then finish-merge <message>",
+            status.conflicts.len()
+        );
+    } else {
+        let hash = repo.commit(message, author)?;
+        println!("{hash}");
+    }
+    Ok(())
+}
+
+fn parse_resolution(prefer: &str) -> Result<Resolution, Failure> {
+    match prefer {
+        "ours" => Ok(Resolution::Ours),
+        "theirs" => Ok(Resolution::Theirs),
+        other => Err(format!("prefer must be ours or theirs, not {other:?}").into()),
+    }
+}
+
+/// The entry a stored entity object holds, or `None` for a deleted side.
+fn stored_entry(
+    repo: &Repository<FileSystemStore, SystemClock>,
+    hash: Option<ContentHash>,
+) -> Result<Option<Entry>, Failure> {
+    let Some(hash) = hash else {
+        return Ok(None);
+    };
+    match Object::decode(&repo.store().get(&hash)?)? {
+        Object::Entity(node) => Ok(Some(Entry::from_uir(&node)?)),
+        _ => Err("a conflict points at an object that is not an entity".into()),
+    }
 }
 
 /// Turns a branch name, a tag name or a full commit hash into a commit.
