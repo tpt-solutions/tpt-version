@@ -35,6 +35,8 @@
   on both sides merge by strategy instead of conflicting. `ListStrategy::Union`
   treats a list as a set, and a removal on either side wins.
 - `ListStrategy::Ordered`: a sequence-aware three-way merge over list items.
+- `oplog`: causal delivery (`Replica::deliver` holds operations until their
+  dependencies arrive) and storage (`OpLog::save` / `load`, as `Object::OpLog`).
 - `oplog`: a live-collaboration op log. Replicas stamp edits with Lamport clocks,
   and logs converge in any merge order. It sits beside the DAG, not inside it.
 - Signed tags: `Repository::create_annotated_tag` and `annotated_tag`, stored as

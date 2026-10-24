@@ -14,6 +14,7 @@ use tpt_crypto_hash::sha2::sha256;
 
 use crate::codec::{Reader, Writer};
 use crate::error::{ObjectError, RepoError};
+use crate::oplog::OpLog;
 use crate::sign::Signature;
 use crate::uir::{self, UirNode};
 
@@ -25,6 +26,7 @@ const TAG_CONFLICT: u8 = 5;
 const TAG_REVIEW: u8 = 6;
 const TAG_TREE_ROOT: u8 = 7;
 const TAG_ANNOTATED_TAG: u8 = 8;
+const TAG_OPLOG: u8 = 9;
 
 fn write_hex(f: &mut fmt::Formatter<'_>, bytes: &[u8]) -> fmt::Result {
     for byte in bytes {
@@ -217,6 +219,8 @@ pub enum Object {
     Review(Review),
     /// An annotated, optionally signed tag. See [`AnnotatedTag`].
     AnnotatedTag(AnnotatedTag),
+    /// A saved live-collaboration op log. See [`OpLog`].
+    OpLog(OpLog),
 }
 
 impl Object {
@@ -231,6 +235,7 @@ impl Object {
             Self::Conflict(_) => "conflict",
             Self::Review(_) => "review",
             Self::AnnotatedTag(_) => "annotated tag",
+            Self::OpLog(_) => "op log",
         }
     }
 
@@ -261,6 +266,11 @@ impl Object {
             Self::Conflict(conflict) => encode_conflict(conflict),
             Self::Review(review) => encode_review(review, true),
             Self::AnnotatedTag(tag) => encode_annotated_tag(tag, true),
+            Self::OpLog(log) => {
+                let mut w = Writer::new(TAG_OPLOG);
+                log.encode_into(&mut w);
+                w.finish()
+            }
         }
     }
 
@@ -276,6 +286,7 @@ impl Object {
             TAG_CONFLICT => Self::Conflict(decode_conflict(&mut r)?),
             TAG_REVIEW => Self::Review(decode_review(&mut r)?),
             TAG_ANNOTATED_TAG => Self::AnnotatedTag(decode_annotated_tag(&mut r)?),
+            TAG_OPLOG => Self::OpLog(OpLog::decode_from(&mut r)?),
             other => return Err(ObjectError::UnknownTag(other)),
         };
         r.finish()?;

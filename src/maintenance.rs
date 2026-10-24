@@ -13,7 +13,7 @@ use crate::store::{CasStore, RefStore, load_object};
 /// The hashes an object refers to, which the object needs to be complete.
 pub(crate) fn children(object: &Object) -> Vec<ContentHash> {
     match object {
-        Object::Blob(_) | Object::Entity(_) => Vec::new(),
+        Object::Blob(_) | Object::Entity(_) | Object::OpLog(_) => Vec::new(),
         Object::Tree(tree) => tree.entries.values().copied().collect(),
         Object::TreeRoot(root) => root.shards.values().copied().collect(),
         Object::Commit(commit) => {
