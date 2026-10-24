@@ -3,11 +3,12 @@
 //! Objects are addressed by hash and every backend verifies bytes against that
 //! hash on both write and read, so corruption is detected rather than returned.
 
+use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 
 use crate::error::{RepoError, StoreError};
-use crate::object::{ContentHash, Object, Tree, wrong_kind};
+use crate::object::{ContentHash, EntityId, Object, Tree, TreeRoot, wrong_kind};
 use crate::uir::UirNode;
 
 mod memory;
@@ -110,9 +111,52 @@ pub(crate) fn load_entity<S: CasStore>(
     }
 }
 
+/// Entities per snapshot before it is split into shards.
+pub(crate) const SHARD_THRESHOLD: usize = 256;
+
+/// Loads a snapshot as one flat tree. A sharded root is read shard by shard.
 pub(crate) fn load_tree<S: CasStore>(store: &S, hash: &ContentHash) -> Result<Tree, RepoError> {
     match load_object(store, hash)? {
         Object::Tree(tree) => Ok(tree),
+        Object::TreeRoot(root) => {
+            let mut entries = BTreeMap::new();
+            for shard in root.shards.values() {
+                match load_object(store, shard)? {
+                    Object::Tree(tree) => entries.extend(tree.entries),
+                    other => return Err(wrong_kind("tree shard", &other)),
+                }
+            }
+            Ok(Tree { entries })
+        }
         other => Err(wrong_kind("tree", &other)),
     }
+}
+
+/// The shard an entity belongs to: the first byte of the hash of its id. Hashing
+/// spreads the shards evenly however the ids were assigned, so sequential ids
+/// shard as well as random ones.
+pub(crate) fn shard_of(id: &EntityId) -> u8 {
+    ContentHash::of(id.as_bytes()).as_bytes()[0]
+}
+
+/// Stores a snapshot and returns its hash. Small snapshots are one tree. Larger
+/// ones are split into shards by [`shard_of`], so a shard
+/// that did not change keeps its hash and is not stored again.
+pub(crate) fn store_tree<S: CasStore>(
+    store: &mut S,
+    entries: BTreeMap<EntityId, ContentHash>,
+) -> Result<ContentHash, RepoError> {
+    if entries.len() <= SHARD_THRESHOLD {
+        return store_object(store, &Object::Tree(Tree { entries }));
+    }
+    let mut groups: BTreeMap<u8, BTreeMap<EntityId, ContentHash>> = BTreeMap::new();
+    for (id, hash) in entries {
+        groups.entry(shard_of(&id)).or_default().insert(id, hash);
+    }
+    let mut shards = BTreeMap::new();
+    for (prefix, group) in groups {
+        let shard = store_object(store, &Object::Tree(Tree { entries: group }))?;
+        shards.insert(prefix, shard);
+    }
+    store_object(store, &Object::TreeRoot(TreeRoot { shards }))
 }

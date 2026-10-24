@@ -14,11 +14,10 @@ use std::env;
 use std::error::Error;
 use std::process::ExitCode;
 
-use tpt_version::dag;
 use tpt_version::error::ObjectError;
-use tpt_version::object::Object;
+
 use tpt_version::repo::SystemClock;
-use tpt_version::store::{CasStore, FileSystemStore};
+use tpt_version::store::FileSystemStore;
 use tpt_version::{ActorId, Entity, EntityId, Repository, Scalar, UirNode};
 
 /// A cell keyed by its address, such as `A1`.
@@ -99,13 +98,9 @@ fn run(args: &[String]) -> Result<ExitCode, Box<dyn Error>> {
         },
         ("show", []) => match repo.head() {
             None => println!("no commits yet"),
-            Some(head) => {
-                let tree_hash = dag::load_commit(repo.store(), &head)?.tree_hash;
-                let Object::Tree(tree) = Object::decode(&repo.store().get(&tree_hash)?)? else {
-                    return Err("head commit does not point at a tree".into());
-                };
+            Some(_) => {
                 // The repository is already staged at the head, so each id loads.
-                for id in tree.entries.keys() {
+                for id in repo.head_tree()?.entries.keys() {
                     if let Some(cell) = repo.entity::<Cell>(id)? {
                         println!("{} = {:?}", cell.address, cell.text);
                     }

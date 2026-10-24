@@ -11,7 +11,7 @@ use alloc::vec::Vec;
 
 use crate::error::RepoError;
 use crate::object::{Conflict, ContentHash, EntityId, FieldConflict, Object, Tree};
-use crate::store::{CasStore, load_entity, load_tree, store_object};
+use crate::store::{CasStore, load_entity, load_tree, store_object, store_tree};
 use crate::text_merge::{merge_lines, merge_sequence};
 use crate::uir::{Scalar, UirNode};
 
@@ -260,7 +260,7 @@ pub fn merge_trees_with<S: CasStore>(
         }
     }
 
-    let merged_tree = store_object(store, &Object::Tree(merged))?;
+    let merged_tree = store_tree(store, merged.entries)?;
     Ok(MergeResult {
         merged_tree,
         conflicts,

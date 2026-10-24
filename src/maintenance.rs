@@ -15,6 +15,7 @@ pub(crate) fn children(object: &Object) -> Vec<ContentHash> {
     match object {
         Object::Blob(_) | Object::Entity(_) => Vec::new(),
         Object::Tree(tree) => tree.entries.values().copied().collect(),
+        Object::TreeRoot(root) => root.shards.values().copied().collect(),
         Object::Commit(commit) => {
             let mut hashes = alloc::vec![commit.tree_hash];
             hashes.extend(&commit.parents);

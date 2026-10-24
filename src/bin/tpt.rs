@@ -26,14 +26,12 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use tpt_version::UirNode;
-use tpt_version::dag;
 use tpt_version::diff::{DiffEntry, diff_commits};
 use tpt_version::export::node_json;
 use tpt_version::maintenance::fsck;
-use tpt_version::object::Object;
 use tpt_version::prelude::*;
 use tpt_version::repo::SystemClock;
-use tpt_version::store::{CasStore, FileSystemStore};
+use tpt_version::store::FileSystemStore;
 
 type Failure = Box<dyn Error>;
 
@@ -257,15 +255,8 @@ fn head_commit(repo: &Repository<FileSystemStore, SystemClock>) -> Result<Conten
 fn head_entries(
     repo: &Repository<FileSystemStore, SystemClock>,
 ) -> Result<BTreeMap<EntityId, Entry>, Failure> {
-    let Some(head) = repo.head() else {
-        return Ok(BTreeMap::new());
-    };
-    let tree_hash = dag::load_commit(repo.store(), &head)?.tree_hash;
-    let Object::Tree(tree) = Object::decode(&repo.store().get(&tree_hash)?)? else {
-        return Err("head commit does not point at a tree".into());
-    };
     let mut entries = BTreeMap::new();
-    for id in tree.entries.keys() {
+    for id in repo.head_tree()?.entries.keys() {
         if let Some(found) = repo.entity::<Entry>(id)? {
             entries.insert(*id, found);
         }

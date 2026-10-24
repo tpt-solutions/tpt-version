@@ -20,7 +20,7 @@ use crate::object::{
 };
 use crate::sign::{Signature, Signer};
 use crate::store::{
-    CasStore, PruneStore, RefStore, load_entity, load_object, load_tree, store_object,
+    CasStore, PruneStore, RefStore, load_entity, load_object, load_tree, store_object, store_tree,
 };
 use crate::trust::TrustPolicy;
 use crate::uir::UirNode;
@@ -250,6 +250,15 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
         Ok(())
     }
 
+    /// The head snapshot as one flat tree. Works the same whether the snapshot
+    /// is stored flat or sharded. Empty when there is no head.
+    pub fn head_tree(&self) -> Result<Tree, RepoError> {
+        match self.head {
+            Some(head) => load_tree(&self.store, &dag::commit_tree(&self.store, &head)?),
+            None => Ok(Tree::default()),
+        }
+    }
+
     /// The changes in the working copy that a commit would record, compared
     /// with the head. Empty when the working copy matches the head.
     /// The commits on the current branch that changed `id`, newest first. Follows
@@ -429,12 +438,7 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
                     .map_err(RepoError::HookRejected)?;
             }
         }
-        let tree_hash = store_object(
-            &mut self.store,
-            &Object::Tree(Tree {
-                entries: self.staged.clone(),
-            }),
-        )?;
+        let tree_hash = store_tree(&mut self.store, self.staged.clone())?;
         let mut commit = Commit {
             tree_hash,
             parents,
@@ -700,7 +704,7 @@ impl<S: CasStore + RefStore, C: Clock> Repository<S, C> {
                 None => entries.remove(&conflict.entity),
             };
         }
-        let tree_hash = store_object(&mut self.store, &Object::Tree(Tree { entries }))?;
+        let tree_hash = store_tree(&mut self.store, entries)?;
         let commit = Commit {
             tree_hash,
             parents: vec![a, b],

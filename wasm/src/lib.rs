@@ -6,10 +6,7 @@
 
 use std::fmt::Display;
 
-use tpt_version::dag;
-use tpt_version::object::Object;
 use tpt_version::prelude::*;
-use tpt_version::store::CasStore;
 use wasm_bindgen::prelude::*;
 
 /// One key-value pair. The id comes from the key, so it survives value edits.
@@ -140,17 +137,7 @@ impl Doc {
 
     /// The key-value pairs at the head, sorted by key, one `key=value` per line.
     pub fn list(&self) -> Result<String, JsValue> {
-        let Some(head) = self.repo.head() else {
-            return Ok(String::new());
-        };
-        let tree_hash = dag::load_commit(self.repo.store(), &head)
-            .map_err(js)?
-            .tree_hash;
-        let Object::Tree(tree) =
-            Object::decode(&self.repo.store().get(&tree_hash).map_err(js)?).map_err(js)?
-        else {
-            return Err(js("head does not point at a tree"));
-        };
+        let tree = self.repo.head_tree().map_err(js)?;
         let mut lines = Vec::new();
         for id in tree.entries.keys() {
             if let Some(found) = self.repo.entity::<Entry>(id).map_err(js)? {

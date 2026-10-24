@@ -35,6 +35,9 @@
   on both sides merge by strategy instead of conflicting. `ListStrategy::Union`
   treats a list as a set, and a removal on either side wins.
 - `ListStrategy::Ordered`: a sequence-aware three-way merge over list items.
+- Large snapshots (over 256 entities) are stored as shards under `Object::TreeRoot`.
+  Small snapshots keep their flat encoding and hashes. `Repository::head_tree`
+  reads either layout.
 - Criss-cross merges use a virtual base built from every best common ancestor
   (`dag::merge_bases`), instead of one arbitrary base.
 - `wasm/`: a wasm-bindgen crate and a static demo page (not yet run in a browser).

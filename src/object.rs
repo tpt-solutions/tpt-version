@@ -23,6 +23,7 @@ const TAG_TREE: u8 = 3;
 const TAG_COMMIT: u8 = 4;
 const TAG_CONFLICT: u8 = 5;
 const TAG_REVIEW: u8 = 6;
+const TAG_TREE_ROOT: u8 = 7;
 
 fn write_hex(f: &mut fmt::Formatter<'_>, bytes: &[u8]) -> fmt::Result {
     for byte in bytes {
@@ -114,6 +115,15 @@ impl ContentHash {
         Self(sha256(data))
     }
 }
+/// A large snapshot, split into shards. Each shard is a [`Tree`] holding the
+/// entities whose id hashes to the same first byte, and this root maps that byte to
+/// the shard's hash. A shard that did not change keeps its hash, so an edit
+/// stores only the shards it touches.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TreeRoot {
+    /// The first byte of an entity id's hash, to the hash of the shard holding it.
+    pub shards: BTreeMap<u8, ContentHash>,
+}
 
 /// A snapshot of entities: each entity id maps to the hash of its current version.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -196,6 +206,8 @@ pub enum Object {
     Entity(UirNode),
     /// A snapshot of entities.
     Tree(Tree),
+    /// A large snapshot split into shards. See [`TreeRoot`].
+    TreeRoot(TreeRoot),
     /// A snapshot with its history.
     Commit(Commit),
     /// An unresolved merge conflict.
@@ -211,6 +223,7 @@ impl Object {
             Self::Blob(_) => "blob",
             Self::Entity(_) => "entity",
             Self::Tree(_) => "tree",
+            Self::TreeRoot(_) => "tree-root",
             Self::Commit(_) => "commit",
             Self::Conflict(_) => "conflict",
             Self::Review(_) => "review",
@@ -230,6 +243,7 @@ impl Object {
                 node.encode(&mut w);
                 w.finish()
             }
+            Self::TreeRoot(root) => encode_tree_root(root),
             Self::Tree(tree) => {
                 let mut w = Writer::new(TAG_TREE);
                 w.count(tree.entries.len());
@@ -252,6 +266,7 @@ impl Object {
             TAG_BLOB => Self::Blob(r.bytes()?),
             TAG_ENTITY => Self::Entity(UirNode::decode(&mut r)?),
             TAG_TREE => Self::Tree(decode_tree(&mut r)?),
+            TAG_TREE_ROOT => Self::TreeRoot(decode_tree_root(&mut r)?),
             TAG_COMMIT => Self::Commit(decode_commit(&mut r)?),
             TAG_CONFLICT => Self::Conflict(decode_conflict(&mut r)?),
             TAG_REVIEW => Self::Review(decode_review(&mut r)?),
@@ -427,6 +442,32 @@ fn decode_commit(r: &mut Reader<'_>) -> Result<Commit, ObjectError> {
         message,
         signature,
     })
+}
+
+fn encode_tree_root(root: &TreeRoot) -> Vec<u8> {
+    let mut w = Writer::new(TAG_TREE_ROOT);
+    w.count(root.shards.len());
+    for (prefix, hash) in &root.shards {
+        w.u8(*prefix);
+        w.fixed(hash.as_bytes());
+    }
+    w.finish()
+}
+
+fn decode_tree_root(r: &mut Reader<'_>) -> Result<TreeRoot, ObjectError> {
+    let count = r.count()?;
+    let mut shards = BTreeMap::new();
+    let mut previous: Option<u8> = None;
+    for _ in 0..count {
+        let prefix = r.u8()?;
+        // Prefixes must be strictly ascending, so each root has one encoding.
+        if previous.is_some_and(|last| prefix <= last) {
+            return Err(ObjectError::InvalidValue("shard prefixes out of order"));
+        }
+        previous = Some(prefix);
+        shards.insert(prefix, r.hash()?);
+    }
+    Ok(TreeRoot { shards })
 }
 
 fn decode_tree(r: &mut Reader<'_>) -> Result<Tree, ObjectError> {
