@@ -61,7 +61,7 @@ required-features = ["std"]
 tpt-testkit = { git = "https://github.com/tpt-solutions/tpt-testkit", rev = "e77a90198eed4235224a49e3226fe2c1b9f2247b", default-features = false, features = ["golden", "property"] }
 proptest = "1"
 # Benchmarks only.
-criterion = "0.5"
+criterion = "0.8"
 
 [workspace]
 members = ["derive", "wasm"]
